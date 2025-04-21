@@ -1,0 +1,21 @@
+font.size: 22
+legend.fontsize: 22
+legend.frameon: False
+axes.labelsize: 22
+axes.titlesize: 22
+xtick.labelsize: 22
+ytick.labelsize: 22
+figure.figsize: 7, 5
+xtick.top: True
+ytick.right: True
+xtick.bottom: True
+ytick.left: True
+xtick.major.size: 8
+xtick.minor.size: 4
+ytick.major.size: 8
+ytick.minor.size: 4
+xtick.direction: in
+ytick.direction: in
+text.usetex:True
+font.family: serif
+axes.linewidth: 1.5
