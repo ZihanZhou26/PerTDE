@@ -6,3 +6,4 @@
 *.bbl
 *.blg
 *.pyc
+*.ipynb_checkpoints
