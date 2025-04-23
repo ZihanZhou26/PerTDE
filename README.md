@@ -1,6 +1,6 @@
 # PerTDE (Perturbative Tidal Disruption Event)
 
-Code for the two-stage model of Tidal Disruption Events used in the paper <a href="https://arxiv.org/abs/2504.xxxxx">"Modeling Tidal Disruptions with Dynamical Tides"</a> [1].
+Code for the two-stage model of Tidal Disruption Events used in the paper <a href="https://arxiv.org/abs/2504.16025">"Modeling Tidal Disruptions with Dynamical Tides"</a> [1].
 
 # Use
 
@@ -17,7 +17,7 @@ If you make use of this code, please consider citing the corresponding paper,
 <pre><code>@article{Zhou2025:xxx,
     author = "Zhou, Zihan and Tomaselli, Giovanni Maria and Mart\'inez-Rodr\'iguez, Irvin and Li, Jingping",
     title = "{Modeling Tidal Disruptions with Dynamical Tides}",
-    eprint = 2504.xxxxx",
+    eprint = 2504.16025",
     archivePrefix = "arXiv",
     primaryClass = "astro-ph.HE",
     year = "2025"
