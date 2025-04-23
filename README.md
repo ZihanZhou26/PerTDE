@@ -14,12 +14,13 @@ For any questions, please send an email to <a href="mailto:zihanz@princeton.edu"
 
 If you make use of this code, please consider citing the corresponding paper,
 
-<pre><code>@article{Zhou2025:xxx,
-    author = "Zhou, Zihan and Tomaselli, Giovanni Maria and Mart\'inez-Rodr\'iguez, Irvin and Li, Jingping",
+<pre><code>@article{Zhou:2025lzg,
+    author = "Zhou, Zihan and Tomaselli, Giovanni Maria and Mart\'\i{}nez-Rodr\'\i{}guez, Irvin and Li, Jingping",
     title = "{Modeling Tidal Disruptions with Dynamical Tides}",
-    eprint = 2504.16025",
+    eprint = "2504.16025",
     archivePrefix = "arXiv",
     primaryClass = "astro-ph.HE",
+    month = "4",
     year = "2025"
 }
 </code></pre>
