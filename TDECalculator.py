@@ -1,5 +1,6 @@
 import pygyre as pg
 import numpy as np
+import scipy as cp
 from scipy import integrate
 import matplotlib.pyplot as plt
 
@@ -10,7 +11,7 @@ class TDECalculator:
     orbiting a supermassive black hole, plus random‐sampling diagnostics
     at the moment of disruption.
     """
-    def __init__(self, star_name, MBH=1e6, Rp=17, N=1000):
+    def __init__(self, star_name, orbit="n", MBH=1e6, Rp=17, a=0.0, N=1000):
         """
         Parameters:
         -----------
@@ -27,6 +28,13 @@ class TDECalculator:
         self.MBH       = MBH
         self.Rp        = Rp
         self.N         = N
+        self.a         = a
+        self.orbit     = orbit
+
+        # ——— Checks ——— 
+        allowed = {"kp", "kr", "s", "n"}
+        if orbit not in allowed:
+            raise ValueError(f"Invalid orbit type: {orbit}. Allowed values are: {allowed} for Kerr prograde, Kerr retrograde, Schwartschild, and Newtonian")
 
         # ——— Read stellar structure ———
         self.summary = pg.read_output(f"star-files/{star_name}/summary.h5")
@@ -55,12 +63,25 @@ class TDECalculator:
         Omegap = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
         t_ini  = self.N * (0.012 / Omegap)
         self.t = np.linspace(-t_ini, t_ini, self.N)
-        self._compute_orbit(Omegap)
+        self.obs_t = np.zeros(len(self.t))
 
-        # ——— Modes & overlaps ———
         self.omega  = self.summary['omega'].real * np.sqrt(self.mass_ratio / self.Rstar**3)
         self._load_mode_details()
-        self._compute_tidal_field()
+        
+        if self.orbit in ("kp", "s"):
+            if self.orbit == "s" and a != 0:
+                raise ValueError("Cannot have a Schwartzschild BH with spin a > 0")
+            self._compute_kerr_prograde_orbit()
+            self._compute_relativistic_tidal_field_prograde()
+
+        elif self.orbit == "kr":
+            self._compute_kerr_retrograde_orbit()
+            self._compute_relativistic_tidal_field_retrograde()
+
+        else:
+            self._compute_orbit(Omegap)
+            self._compute_tidal_field()
+
         self._compute_overlaps()
         self._compute_greens_functions()
         self._compute_quadrupoles()
@@ -71,6 +92,263 @@ class TDECalculator:
         # ——— Tidal energy & TDE detection ———
         self._compute_tidal_energy()
         self._detect_tde_indices()
+
+    def geodesic_schwartz_para(self, τ, y):
+        """
+        Schwartzschild geodesics.
+        """
+        r, phi, t = y
+
+        f_p = 1 - 2/self.Rp
+        L  = np.sqrt((2*self.Rp)/ f_p)
+        E = 1.0
+
+        f = 1 - 2/r
+
+        dr_mag = np.sqrt(E**2 - f*(1 + L**2/r**2))
+        dr_dτ = np.sign(τ)*dr_mag
+        dphi_dτ = L/r**2
+        dt_dτ = E/f
+
+        return [dr_dτ, dphi_dτ, dt_dτ]
+
+    def _compute_schwartz_orbit(self):
+        """
+        For Schwartzschild orbits, compute the orbital phase (Phi), radius (R), and their time derivatives
+        for a parabolic trajectory. Used to compare accuracy of a=0 Kerr orbits.
+        """
+        tau_max = np.max(self.t)
+        ε = 1e-6
+
+        sol_out = cp.integrate.solve_ivp(
+            self.geodesic_schwartz_para,
+            (0, tau_max),
+            [self.Rp+ε,  0.0, 0.0],
+            t_eval=self.t[self.t >= 0],
+        )
+
+        tau = np.hstack([-sol_out.t[::-1], sol_out.t[1:]])
+        radius = np.hstack([ sol_out.y[0][::-1], sol_out.y[0][1:] ])
+        phi = np.hstack([-sol_out.y[1][::-1], sol_out.y[1][1:]])
+        time = np.hstack([-sol_out.y[2][::-1], sol_out.y[2][1:]])
+
+        self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
+        self.Phi = cp.interpolate.interp1d(tau, phi, kind='cubic', fill_value='extrapolate')
+        self.obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
+
+        Rdot = np.gradient(radius, tau, edge_order=2)
+        phidot = np.gradient(phi, tau, edge_order=2)
+
+        self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
+        self.phidot = cp.interpolate.interp1d(tau, phidot, kind='cubic', fill_value='extrapolate')
+
+    def mom_kerr(self, rp, a, prograde):
+        """
+        Computes Lz for Kerr orbits
+        """
+        Δ = rp**2 - 2*rp + a**2
+        coef_a = a**2 - Δ
+        coef_b = 2*a*(Δ - (rp**2 + a**2))
+        coef_c = (rp**2 + a**2)**2 - Δ*(rp**2 + a**2)
+        Lz_roots = np.real_if_close(np.roots([coef_a, coef_b, coef_c]), tol=1e-8)
+
+        if prograde:
+            return max(Lz_roots) 
+        else:
+            return min(Lz_roots)
+
+    def geodesic_kerr_para_pro_out(self, τ, y):
+        """
+        Computes outgoing geodesics for equatorial parabolic prograde Kerr orbits.
+        """
+        t, r, phi = y
+
+        sign = 1
+        theta = np.pi/2
+        q = 0.0
+        rp = self.Rp
+        a = self.a
+
+        Lz = self.mom_kerr(rp, a, prograde=True)
+    
+        p = (r**2 + a**2) - a * Lz
+        rho = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 - 2 * r + a**2
+
+        dt_dτ = (-a * (a * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
+        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
+        dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
+        # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho
+
+        return [dt_dτ, dr_dτ, dφ_dτ]
+    
+    def geodesic_kerr_para_pro_in(self, τ, y):
+        """
+        Computes inbound geodesics for equatorial parabolic prograde Kerr orbits.
+        """
+        t, r, phi = y
+
+        sign = -1
+        theta = np.pi/2
+        q = 0.0
+        rp = self.Rp
+        a = self.a
+
+        Lz = self.mom_kerr(rp, a, prograde=True)
+    
+        p = (r**2 + a**2) - a * Lz
+        rho = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 - 2 * r + a**2
+
+        dt_dτ = (-a * (a * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
+        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
+        dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
+        # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho
+
+        return [dt_dτ, dr_dτ, dφ_dτ]
+    
+    def geodesic_kerr_para_retro_out(self, τ, y):
+        """
+        Computes outgoing geodesics for equatorial parabolic retrograde Kerr orbits.
+        """
+        t, r, phi = y
+
+        sign = 1
+        theta = np.pi/2
+        q = 0.0
+        rp = self.Rp
+        a = self.a
+
+        Lz = self.mom_kerr(rp, a, prograde=False)
+    
+        p = (r**2 + a**2) - a * Lz
+        rho = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 - 2 * r + a**2
+
+        dt_dτ = (-a * (a * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
+        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
+        dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
+        # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho
+
+        return [dt_dτ, dr_dτ, dφ_dτ]
+    
+    def geodesic_kerr_para_retro_in(self, τ, y):
+        """
+        Computes inbound geodesics for equatorial parabolic retrograde Kerr orbits.
+        """
+        t, r, phi = y
+
+        sign = -1
+        theta = np.pi/2
+        q = 0.0
+        rp = self.Rp
+        a = self.a
+
+        Lz = self.mom_kerr(rp, a, prograde=False)
+    
+        p = (r**2 + a**2) - a * Lz
+        rho = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 - 2 * r + a**2
+
+        dt_dτ = (-a * (a * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
+        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
+        dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
+        # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho
+
+        return [dt_dτ, dr_dτ, dφ_dτ]
+    
+    def _compute_kerr_prograde_orbit(self):
+        """
+        For Kerr prograde orbits, compute the orbital phase (Phi), radius (R), and their time derivatives
+        for a parabolic trajectory.
+        """
+        rp = self.Rp
+        ε = 1e-6
+        tau_max = np.max(self.t)
+        tau_min = np.min(self.t)
+
+        y0_out = [0.0, rp + ε, 0.0]
+        sol_out = cp.integrate.solve_ivp(
+            self.geodesic_kerr_para_pro_out,
+            (0, tau_max),
+            y0_out,
+            t_eval=self.t[self.t >= 0]
+        )   
+
+        y0_in = [0.0, rp + ε, 0.0]
+        sol_in = cp.integrate.solve_ivp(
+            self.geodesic_kerr_para_pro_in,
+            (0, tau_min),
+            y0_in,
+            t_eval=self.t[self.t <= 0][::-1]
+        )
+
+        tau = np.hstack([sol_in.t[::-1], sol_out.t[1:]])
+        time = np.hstack([sol_in.y[0][::-1], sol_out.y[0][1:]])
+        radius = np.hstack([sol_in.y[1][::-1], sol_out.y[1][1:]])
+        phi = np.hstack([sol_in.y[2][::-1], sol_out.y[2][1:]])
+
+        self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
+        self.Phi = cp.interpolate.interp1d(tau, phi, kind='cubic', fill_value='extrapolate')
+        self.obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
+
+        Rdot = np.gradient(radius, tau, edge_order=2)
+        phidot = np.gradient(phi, tau, edge_order=2)
+
+        self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
+        self.phidot = cp.interpolate.interp1d(tau, phidot, kind='cubic', fill_value='extrapolate')
+
+    def _compute_kerr_retrograde_orbit(self):
+        """
+        For Kerr retrograde orbits, compute the orbital phase (Phi), radius (R), and their time derivatives
+        for a parabolic trajectory.
+        """
+        rp = self.Rp
+        ε = 1e-6
+        tau_max = np.max(self.t)
+        tau_min = np.min(self.t)
+
+        y0_out = [0.0, rp + ε, 0.0]
+        sol_out = cp.integrate.solve_ivp(
+            self.geodesic_kerr_para_retro_out,
+            (0, tau_max),
+            y0_out,
+            t_eval=self.t[self.t >= 0]
+        )   
+
+        # Inbound: same start, march backward
+        y0_in = [0.0, rp + ε, 0.0]
+        sol_in = cp.integrate.solve_ivp(
+            self.geodesic_kerr_para_retro_in,
+            (0, tau_min),
+            y0_in,
+            t_eval=self.t[self.t <= 0][::-1]
+        )
+
+        tau = np.hstack([sol_in.t[::-1], sol_out.t[1:]])
+        time = np.hstack([sol_in.y[0][::-1], sol_out.y[0][1:]])
+        radius = np.hstack([sol_in.y[1][::-1], sol_out.y[1][1:]])
+        phi = np.hstack([sol_in.y[2][::-1], sol_out.y[2][1:]])
+
+        self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
+        self.Phi = cp.interpolate.interp1d(tau, phi, kind='cubic', fill_value='extrapolate')
+        self.obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
+
+        Rdot = np.gradient(radius, tau, edge_order=2)
+        phidot = np.gradient(phi, tau, edge_order=2)
+
+        self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
+        self.phidot = cp.interpolate.interp1d(tau, phidot, kind='cubic', fill_value='extrapolate')
+
+    def _compute_kerr_orbit(self, prograde):
+        """
+        For Kerr orbits, compute the orbital phase (Phi), radius (R), and their time derivatives
+        for a parabolic trajectory.
+        """
+        if prograde:
+            return self._compute_kerr_prograde_orbit()
+        else:
+            return self._compute_kerr_retrograde_orbit()
 
     def _compute_orbit(self, Omegap):
         """
@@ -146,6 +424,111 @@ class TDECalculator:
         # Store the results on the instance
         self.E, self.dEdt = E, dEdt
 
+    def _compute_relativistic_tidal_field_prograde(self):
+        """
+        In prograde relativistic case, assemble the tidal tensor E_ab(t) and its time derivative dE_ab/dt
+        due to the SMBH's gravitational field at the star's center.
+        """
+        N = self.N
+        # Initialize arrays: E[a,b,i] and dEdt[a,b,i]
+        E = np.zeros((3, 3, N))
+        dEdt = np.zeros_like(E)
+
+        # Precompute cos(Φ) and sin(Φ)
+        t = self.t
+        Phi = self.Phi(t)
+        c, s = np.cos(Phi), np.sin(Phi)
+        R, Rdot, phidot = self.R(t), self.Rdot(t), self.phidot(t)
+        Lz = self.mom_kerr(self.Rp, self.a, prograde=True)
+
+        # Tidal tensor components in the principal orbital frame:
+        # E_xx = (1 - 3 (R^2 + (Lz - a)^2) / R^2) cos^2Φ) / R^3
+        E[0,0] = (1 - (3 * (R**2 + (Lz - self.a)**2) * c**2)/R**2) / R**3
+        # E_yy = (1 - 3 (R^2 + (Lz - a)^2) / R^2) sin^2Φ) / R^3
+        E[1,1] = (1 - (3 * (R**2 + (Lz - self.a)**2) * s**2)/R**2) / R**3
+        # E_zz = (1 + 3 (Lz - a)^2 / R^2)) / R^3
+        E[2,2] = (1 + (3 * (Lz - self.a)**2) / R**2) / R**3
+        # Off‐diagonal E_xy = E_yx = -3 (R^2 + (Lz - a)^2) sinΦ cosΦ / R^5
+        E[0,1] = E[1,0] = (-3 * (R**2 + (Lz - self.a)**2) * s * c)/ R**5
+
+        # Now compute time derivatives dE_ab/dt:
+        # Use product and chain rules on R(t) and Φ(t).
+        dEdt[0,0] = (3 / R**6) * (((self.a - Lz)**2 * R * phidot * np.sin(2 * Phi)) 
+                                 + (5 * (self.a - Lz)**2 * np.cos(Phi)**2 * Rdot) 
+                                 + (R**3 * phidot * np.sin(2 * Phi)) 
+                                 + (0.5 * R**2 * (3 * np.cos(2 * Phi) + 1)) * Rdot)
+        
+        dEdt[1,1] = (-3 / R**6) * (((self.a - Lz)**2 * R * phidot * np.sin(2 * Phi)) 
+                                 - (5 * (self.a - Lz)**2 * np.sin(Phi)**2 * Rdot) 
+                                 + (R**3 * phidot * np.sin(2 * Phi)) 
+                                 + (0.5 * R**2 * (3 * np.cos(2 * Phi) - 1)) * Rdot)
+        
+        dEdt[2,2] = (-3 * Rdot * (5 * (self.a - Lz)**2 + R**2)) / R**6
+
+        # Mixed derivative for E_xy:
+        dEdt[0,1] = dEdt[1,0] = (3 / (2 * R**6)) * (np.sin(2 * Phi) * Rdot * (5 * (self.a - Lz)**2 + 3 * R**2) - 
+                                                    2 * R * phidot * np.cos(2 * Phi) * ((self.a - Lz)**2) + R**2)
+
+        # Store the results on the instance
+        self.E, self.dEdt = E, dEdt
+
+    def _compute_relativistic_tidal_field_retrograde(self):
+        """
+        In retrograde relativistic case, assemble the tidal tensor E_ab(t) and its time derivative dE_ab/dt
+        due to the SMBH's gravitational field at the star's center.
+        """
+        N = self.N
+        # Initialize arrays: E[a,b,i] and dEdt[a,b,i]
+        E = np.zeros((3, 3, N))
+        dEdt = np.zeros_like(E)
+
+        # Precompute cos(Φ) and sin(Φ)
+        t = self.t
+        Phi = self.Phi(t)
+        c, s = np.cos(Phi), np.sin(Phi)
+        R, Rdot, phidot = self.R(t), self.Rdot(t), self.phidot(t)
+        Lz = self.mom_kerr(self.Rp, self.a, prograde=False)
+
+        # Tidal tensor components in the principal orbital frame:
+        # E_xx = (1 - 3 (R^2 + (Lz - a)^2) / R^2) cos^2Φ) / R^3
+        E[0,0] = (1 - (3 * (R**2 + (Lz - self.a)**2) * c**2)/R**2) / R**3
+        # E_yy = (1 - 3 (R^2 + (Lz - a)^2) / R^2) sin^2Φ) / R^3
+        E[1,1] = (1 - (3 * (R**2 + (Lz - self.a)**2) * s**2)/R**2) / R**3
+        # E_zz = (1 + 3 (Lz - a)^2 / R^2)) / R^3
+        E[2,2] = (1 + (3 * (Lz - self.a)**2) / R**2) / R**3
+        # Off‐diagonal E_xy = E_yx = -3 (R^2 + (Lz - a)^2) sinΦ cosΦ / R^5
+        E[0,1] = E[1,0] = (-3 * (R**2 + (Lz - self.a)**2) * s * c)/ R**5
+
+        # Now compute time derivatives dE_ab/dt:
+        # Use product and chain rules on R(t) and Φ(t).
+        dEdt[0,0] = (3 / R**6) * (((self.a - Lz)**2 * R * phidot * np.sin(2 * Phi)) 
+                                 + (5 * (self.a - Lz)**2 * np.cos(Phi)**2 * Rdot) 
+                                 + (R**3 * phidot * np.sin(2 * Phi)) 
+                                 + (0.5 * R**2 * (3 * np.cos(2 * Phi) + 1)) * Rdot)
+        
+        dEdt[1,1] = (-3 / R**6) * (((self.a - Lz)**2 * R * phidot * np.sin(2 * Phi)) 
+                                 - (5 * (self.a - Lz)**2 * np.sin(Phi)**2 * Rdot) 
+                                 + (R**3 * phidot * np.sin(2 * Phi)) 
+                                 + (0.5 * R**2 * (3 * np.cos(2 * Phi) - 1)) * Rdot)
+        
+        dEdt[2,2] = (-3 * Rdot * (5 * (self.a - Lz)**2 + R**2)) / R**6
+
+        # Mixed derivative for E_xy:
+        dEdt[0,1] = dEdt[1,0] = (3 / (2 * R**6)) * (np.sin(2 * Phi) * Rdot * (5 * (self.a - Lz)**2 + 3 * R**2) - 
+                                                    2 * R * phidot * np.cos(2 * Phi) * ((self.a - Lz)**2) + R**2)
+
+        # Store the results on the instance
+        self.E, self.dEdt = E, dEdt
+
+    def _compute_relativistic_tidal_field(self, prograde):
+        """
+        In relativistic case, assemble the tidal tensor E_ab(t) and its time derivative dE_ab/dt
+        due to the SMBH's gravitational field at the star's center.
+        """
+        if prograde:
+            return self._compute_relativistic_tidal_field_prograde()
+        else:
+            return self._compute_relativistic_tidal_field_retrograde()
 
     def _compute_overlaps(self):
         """
@@ -345,6 +728,13 @@ class TDECalculator:
         disruption threshold gamma * (U * q^2 / R_star).
         Interpolate to get precise t_TDE, and record R_TDE, Phi_TDE.
         """
+        if self.orbit != "n":
+            R = self.R(self.t)
+            Phi = self.Phi(self.t)
+        else:
+            R = self.R
+            Phi = self.Phi
+
         # Disruption criterion threshold
         threshold = self.gamma * (self.U * self.mass_ratio**2 / self.Rstar)
 
@@ -362,8 +752,8 @@ class TDECalculator:
 
         # Record corresponding orbital radius & phase
         self.i_TDE = idx
-        self.R_TDE = np.interp(self.t_TDE, self.t, self.R)
-        self.Phi_TDE = np.interp(self.t_TDE, self.t, self.Phi)
+        self.R_TDE = np.interp(self.t_TDE, self.t, R)
+        self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
 
 
     def whole_star_sample(self, N_Omega=300**2):
@@ -590,5 +980,18 @@ class TDECalculator:
         * rho_avg[:, None, None]
 
         return {'POS_unperturbed': POS_unperturbed, "POS": POS, 'dMass': dMass}
+    
+    def plot_orbit(self):
+        x = self.R * np.cos(self.Phi)
+        y = self.R * np.sin(self.Phi)
+        plt.figure(figsize=(6, 6))
+        plt.plot(x, y)
+        plt.scatter([0], [0], color='k', label="Black Hole")
+        plt.axis('equal')
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.title("GR Parabolic Orbit")
+        plt.legend()
+        plt.show()
 
   
