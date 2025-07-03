@@ -11,7 +11,7 @@ class TDECalculator:
     orbiting a supermassive black hole, plus random‐sampling diagnostics
     at the moment of disruption.
     """
-    def __init__(self, star_name, orbit="n", MBH=1e6, Rp=17, a=0.0, N=1000):
+    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, N=1000):
         """
         Parameters:
         -----------
@@ -32,7 +32,7 @@ class TDECalculator:
         self.orbit     = orbit
 
         # ——— Checks ——— 
-        allowed = {"ntwn", "rel"}
+        allowed = {"nwtn", "rel"}
         if orbit not in allowed:
             raise ValueError(f"Invalid orbit type: {orbit}. Allowed values are: {allowed} for Newtonian and Relativistic orbits (Kerr Retrograde (a < 0) Schwartschild (a = 0), Kerr Prograde (a > 0))")
 
