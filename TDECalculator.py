@@ -522,7 +522,7 @@ class TDECalculator:
         disruption threshold gamma * (U * q^2 / R_star).
         Interpolate to get precise t_TDE, and record R_TDE, Phi_TDE.
         """
-        if self.orbit != "n":
+        if self.orbit != "nwtn":
             R = self.R(self.t)
             Phi = self.Phi(self.t)
         else:
