@@ -11,7 +11,7 @@ class TDECalculator:
     orbiting a supermassive black hole, plus random‐sampling diagnostics
     at the moment of disruption.
     """
-    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, N=1000):
+    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, idx_after_tde = 0, N=1000):
         """
         Parameters:
         -----------
@@ -35,6 +35,9 @@ class TDECalculator:
         allowed = {"nwtn", "rel"}
         if orbit not in allowed:
             raise ValueError(f"Invalid orbit type: {orbit}. Allowed values are: {allowed} for Newtonian and Relativistic orbits (Kerr Retrograde (a < 0) Schwartschild (a = 0), Kerr Prograde (a > 0))")
+        
+        if not isinstance(idx_after_tde, int):
+            raise ValueError("idx_after_tde must be an integer.")
 
         # ——— Read stellar structure ———
         self.summary = pg.read_output(f"star-files/{star_name}/summary.h5")
@@ -84,7 +87,7 @@ class TDECalculator:
 
         # ——— Tidal energy & TDE detection ———
         self._compute_tidal_energy()
-        self._detect_tde_indices()
+        self._detect_tde_indices(idx_after_tde)
 
     def mom_kerr_analytic(self, rp, a):
         """
@@ -516,7 +519,7 @@ class TDECalculator:
         # Store net tidal energy
         self.TidalEnergy = TE_cumulative - instant_term
 
-    def _detect_tde_indices(self):
+    def _detect_tde_indices(self, time):
         """
         Find the first time when the accumulated tidal energy exceeds the
         disruption threshold gamma * (U * q^2 / R_star).
@@ -536,7 +539,7 @@ class TDECalculator:
         above = np.where(self.TidalEnergy > threshold)[0]
         if not len(above):
             raise RuntimeError("No TDE detected; tidal energy never exceeds threshold.")
-        idx = above[0]
+        idx = above[0] + time
 
         # Linear interpolation between idx-1 and idx for precise t_TDE
         t0, t1 = self.t[idx-1], self.t[idx]
