@@ -11,7 +11,7 @@ class TDECalculator:
     orbiting a supermassive black hole, plus random‐sampling diagnostics
     at the moment of disruption.
     """
-    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, idx_after_tde = 0, N=1000):
+    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, N=1000):
         """
         Parameters:
         -----------
@@ -35,9 +35,6 @@ class TDECalculator:
         allowed = {"nwtn", "rel"}
         if orbit not in allowed:
             raise ValueError(f"Invalid orbit type: {orbit}. Allowed values are: {allowed} for Newtonian and Relativistic orbits (Kerr Retrograde (a < 0) Schwartschild (a = 0), Kerr Prograde (a > 0))")
-        
-        if not isinstance(idx_after_tde, int):
-            raise ValueError("idx_after_tde must be an integer.")
 
         # ——— Read stellar structure ———
         self.summary = pg.read_output(f"star-files/{star_name}/summary.h5")
@@ -87,7 +84,7 @@ class TDECalculator:
 
         # ——— Tidal energy & TDE detection ———
         self._compute_tidal_energy()
-        self._detect_tde_indices(idx_after_tde)
+        self._detect_tde_indices()
 
     def mom_kerr_analytic(self, rp, a):
         """
@@ -519,7 +516,7 @@ class TDECalculator:
         # Store net tidal energy
         self.TidalEnergy = TE_cumulative - instant_term
 
-    def _detect_tde_indices(self, time):
+    def _detect_tde_indices(self):
         """
         Find the first time when the accumulated tidal energy exceeds the
         disruption threshold gamma * (U * q^2 / R_star).
@@ -539,7 +536,7 @@ class TDECalculator:
         above = np.where(self.TidalEnergy > threshold)[0]
         if not len(above):
             raise RuntimeError("No TDE detected; tidal energy never exceeds threshold.")
-        idx = above[0] + time
+        idx = above[0]
 
         # Linear interpolation between idx-1 and idx for precise t_TDE
         t0, t1 = self.t[idx-1], self.t[idx]
@@ -553,7 +550,7 @@ class TDECalculator:
         self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
 
 
-    def whole_star_sample(self, N_Omega=300**2):
+    def whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
         """
         At the TDE moment, sample N_Omega random directions on the sphere,
         compute perturbed and unperturbed energies & orbital periods,
@@ -567,7 +564,7 @@ class TDECalculator:
         # 1. Interpolate t_TDE quantities
         R_TDE   = self.R_TDE
         Phi_TDE = self.Phi_TDE
-        i0, i1  = self.i_TDE - 1, self.i_TDE
+        i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
 
         xi_r_TDE = (self.xi_r[:, :, i0]
@@ -672,7 +669,7 @@ class TDECalculator:
             'dMass':                dMass_random
         }
     
-    def equator_sample(self, n_phi=3000):
+    def equator_sample(self, idx_from_tde=0, n_phi=3000):
         """
         Build a full 3D grid of debris positions at t_TDE, both
         unperturbed and mode‐perturbed, on a (r, θ, φ) mesh.
@@ -723,7 +720,7 @@ class TDECalculator:
         ], axis=-1)                                   # (n_theta, n_phi, 3)
 
         # Interpolate xi_r and xi_h at self.t_TDE between indices i_TDE-1 and i_TDE
-        i0, i1 = self.i_TDE-1, self.i_TDE
+        i0, i1 = self.i_TDE-1 + idx_from_tde, self.i_TDE + idx_from_tde
         frac   = (self.t_TDE - self.t[i0])/(self.t[i1]-self.t[i0])
         xi_r_TDE = self.xi_r[:, :, i0] + frac*(self.xi_r[:, :, i1] - self.xi_r[:, :, i0])
         xi_h_TDE = self.xi_h[:, :, i0] + frac*(self.xi_h[:, :, i1] - self.xi_h[:, :, i0])
@@ -777,18 +774,5 @@ class TDECalculator:
         * rho_avg[:, None, None]
 
         return {'POS_unperturbed': POS_unperturbed, "POS": POS, 'dMass': dMass}
-    
-    def plot_orbit(self):
-        x = self.R * np.cos(self.Phi)
-        y = self.R * np.sin(self.Phi)
-        plt.figure(figsize=(6, 6))
-        plt.plot(x, y)
-        plt.scatter([0], [0], color='k', label="Black Hole")
-        plt.axis('equal')
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.title("GR Parabolic Orbit")
-        plt.legend()
-        plt.show()
 
   
