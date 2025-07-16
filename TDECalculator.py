@@ -119,9 +119,6 @@ class TDECalculator:
         dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
         # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho 
 
-        if a < 0:
-            dφ_dτ = -1 * (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
-
         dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
 
         return [dt_dτ, dr_dτ, dφ_dτ, dpsi_dτ]
@@ -149,9 +146,6 @@ class TDECalculator:
         dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
         dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
         # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho 
-
-        if a < 0:
-            dφ_dτ = -1 * (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho          # handles direction for retrograde orbits
 
         dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
 
@@ -183,20 +177,32 @@ class TDECalculator:
             t_eval=self.t[self.t <= 0][::-1]
         )
 
+        # connect inbound and outbound leg
         tau = np.hstack([sol_in.t[::-1], sol_out.t[1:]])
         time = np.hstack([sol_in.y[0][::-1], sol_out.y[0][1:]])
         radius = np.hstack([sol_in.y[1][::-1], sol_out.y[1][1:]])
         phi = np.hstack([sol_in.y[2][::-1], sol_out.y[2][1:]])
         psi = np.hstack([sol_in.y[3][::-1], sol_out.y[3][1:]])
+        psi += phi[0] - psi[0]
 
+        # R, phi, t, and psi
         self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
         self.Phi = cp.interpolate.interp1d(tau, phi, kind='cubic', fill_value='extrapolate')
         self.obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
         self.Psi = cp.interpolate.interp1d(tau, psi, kind='cubic', fill_value='extrapolate')
 
-        Rdot = np.gradient(radius, tau, edge_order=2)
-        phidot = np.gradient(phi, tau, edge_order=2)
-        psidot = np.gradient(psi, tau, edge_order=2)
+        # calculate Rdot, phidot, and psidot
+        a = self.a
+        Lz = self.mom_kerr_analytic(rp, a)
+        theta = np.pi/2
+
+        p = (radius**2 + a**2) - a * Lz
+        rho = radius**2 + a**2 * np.cos(theta)**2
+        delta = radius**2 - 2 * radius + a**2
+
+        Rdot = (np.sign(tau) * np.sqrt(p**2 - delta * (radius**2 + (Lz - a)**2))) / rho
+        phidot = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho  
+        psidot = np.abs(a - Lz) * (((radius**2 + a**2) - a * Lz) / ((a - Lz)**2 + radius**2) + a * (Lz - a) / (a - Lz)**2) / radius**2
 
         self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
         self.phidot = cp.interpolate.interp1d(tau, phidot, kind='cubic', fill_value='extrapolate')
@@ -319,7 +325,7 @@ class TDECalculator:
 
         # Mixed derivative for E_xy:
         dEdt[0,1] = dEdt[1,0] = (3 / (2 * R**6)) * (np.sin(2 * Psi) * Rdot * (5 * (self.a - Lz)**2 + 3 * R**2) - 
-                                                    2 * R * psidot * np.cos(2 * Psi) * ((self.a - Lz)**2) + R**2)
+                                                    2 * R * psidot * np.cos(2 * Psi) * ((self.a - Lz)**2 + R**2))
 
         # Store the results on the instance
         self.E, self.dEdt = E, dEdt
@@ -631,6 +637,7 @@ class TDECalculator:
           + (self.Rstar * z_pos)**2
         )
         dEnergy_random = -1/dist + 1/R_TDE
+
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
@@ -774,5 +781,3 @@ class TDECalculator:
         * rho_avg[:, None, None]
 
         return {'POS_unperturbed': POS_unperturbed, "POS": POS, 'dMass': dMass}
-
-  
