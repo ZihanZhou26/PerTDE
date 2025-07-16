@@ -555,6 +555,44 @@ class TDECalculator:
         self.R_TDE = np.interp(self.t_TDE, self.t, R)
         self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
 
+    def rel_lambda(self):
+        N = self.N
+        # Initialize arrays: C[a,b,i]
+        C = np.zeros((4, 4, N))
+
+        # Precompute cos(Φ) and sin(Φ)
+        t = self.t
+        a = self.a 
+        q = 0.0
+        theta = np.pi/2
+        thetadot = 0
+        c, s = np.cos(theta), np.sin(theta)
+        R, Rdot = self.R(t), self.Rdot(t)
+        Lz = self.mom_kerr_analytic(self.Rp, self.a)
+        K = q + (Lz - a)**2
+        sigma = R**2 + a**2 * np.cos(theta)**2
+        delta = R**2 + a**2 - 2 * R
+
+        alpha = np.sqrt((K - a**2 * np.cos(theta)**2) / (R**2 + K))
+        beta = 1 / alpha
+
+        self.C = C
+        C[1,0] = (1 / np.sqrt(K)) * ((alpha * (R**2 + a**2) * R * Rdot) / delta + (beta * a**2 * s * c * thetadot))
+        C[1,1] = ((alpha * R) / (sigma * np.sqrt(K))) * ((R**2 + a**2) - a * Lz)
+        C[1,2] = ((beta * a * np.ocs(theta)) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        C[1,3] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
+
+        C[2,0] = (a / np.sqrt(K)) * ((alpha * R * Rdot) / delta + ((beta * c * thetadot) / s))
+        C[2,1] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
+        C[2,2] = ((a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        C[2,3] = (1 / np.sqrt(K)) * ((a**2 * c * Rdot) / delta - ((R * thetadot) / s))
+
+        C[3,0] = alpha * ((R**2 + a**2) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
+        C[3,1] = alpha * Rdot
+        C[3,2] = beta * thetadot
+        C[3,3] = ((alpha * a) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
+
+        self.C = C
 
     def whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
         """
@@ -637,7 +675,6 @@ class TDECalculator:
           + (self.Rstar * z_pos)**2
         )
         dEnergy_random = -1/dist + 1/R_TDE
-
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
