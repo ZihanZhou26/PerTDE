@@ -71,6 +71,9 @@ class TDECalculator:
         if self.orbit == "rel":
             self._compute_rel_orbit()
             self._compute_relativistic_tidal_field()
+            self.kerr_metric()
+            self.christoffel_symb()
+            self.rel_lambda()
         else:
             self._compute_orbit(Omegap)
             self._compute_tidal_field()
@@ -555,10 +558,80 @@ class TDECalculator:
         self.R_TDE = np.interp(self.t_TDE, self.t, R)
         self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
 
+    def kerr_metric(self):
+        N = self.N
+        # Initialize arrays: G[a,b,i]
+        G = np.zeros((4, 4, N))
+        theta = np.pi/2
+        t, a = self.t, self.a
+        R = self.R(t)
+        s, c = np.sin(theta), np.cos(theta)
+        delta = R**2 + a**2 - 2 * R
+        sigma = R**2 + a**2 * c**2
+        A = (R**2 + a**2)**a - sigma * a**2 * s**2
+
+        G[0,0] = -A / (sigma * delta)
+        G[1,1] = delta / sigma
+        G[2,2] = 1 / sigma
+        G[3,3] = (delta - (a**2 * s**2)) / (sigma * delta * s**2)
+
+        G[0,3] = G[3,0] = -(2 * a * R) / (sigma * delta)
+
+        G[0,1] = G[0,2] = 0
+        G[1,0] = G[1,2] = G[1,3] = 0
+        G[2,0] = G[2,1] = G[2,3] = 0
+        G[3,1] = G[3,2] = 0
+
+        self.G = G
+
+    def christoffel_symb(self):
+        N = self.N
+        C = np.zeros((4, 4, 4, N))
+        theta = np.pi/2
+        s, c = np.sin(theta), np.cos(theta)
+        t, a = self.t, self.a
+        R = self.R(t)
+
+        delta = R**2 + a**2 - 2 * R
+        sigma = R**2 + a**2 * c**2
+        A = (R**2 + a**2)**a - sigma * a**2 * s**2
+
+        C[1,0,0] = (delta / sigma**3) * (2 * R**2 - sigma)
+        C[2,0,0] = -(2 * a**2 * R * s * c) / sigma**3
+
+        C[1,1,1] = (R / sigma) - ((R - 1) / delta)
+        C[2,1,1] = (a**2 * s * c) / (sigma * delta)
+
+        C[1,2,2] = -(R * delta) / sigma
+        C[2,2,2] = -(a**2 * s * c) / sigma
+
+        C[1,3,3] = -((delta * s**2)/sigma) * (R - (((a**2 * s**2) / sigma**2) * (2*R**2 - sigma)))
+        C[2,3,3] = -((s*c)/sigma**3) * ((R**2 + a**2) * A - sigma * delta * a**2 * s**2)
+
+        C[0,0,1] = ((R**2 + a**2) / (sigma**2 * delta)) * (2*R**2 - sigma)
+        C[3,0,1] = (a / (sigma**2 * delta)) * (2*R**2 - sigma)
+
+        C[0,0,2] = -(2 * a**2 * R * s * c) / sigma**2
+        C[3,0,2] = -(2 * a * R * c) / (sigma**2 * s)
+
+        C[1,0,3] = -((a * delta * s**2) / sigma**3) * (2*R**2 - sigma)
+        C[2,0,3] = (2 * a * R * (R**2 + a**2) * s * c) / sigma**3
+
+        C[1,1,2] = -(a**2 * s * c) / sigma
+        C[2,1,2] = R / sigma
+
+        C[0,1,3] = -((a * s**2) / (sigma * delta)) * (((2*R**2)/sigma) * (R**2 + a**2) + R**2 - a**2)
+        C[3,1,3] = (R / sigma) - (((a**2 * s**2) / (sigma * delta)) * (R - 1 + ((2*R**2)/sigma)))
+
+        C[0,2,3] = (2 * a**3 * R * s**3 * c) / sigma**2
+        C[3,2,3] = (c/s) * (1 + ((2*a**2 * R * s**2)/sigma**2))
+
+        self.C = C
+
     def rel_lambda(self):
         N = self.N
-        # Initialize arrays: C[a,b,i]
-        C = np.zeros((4, 4, N))
+        # Initialize arrays: LAMBDA[a,b,i]
+        LAMBDA = np.zeros((4, 4, N))
 
         # Precompute cos(Φ) and sin(Φ)
         t = self.t
@@ -576,23 +649,30 @@ class TDECalculator:
         alpha = np.sqrt((K - a**2 * np.cos(theta)**2) / (R**2 + K))
         beta = 1 / alpha
 
-        self.C = C
-        C[1,0] = (1 / np.sqrt(K)) * ((alpha * (R**2 + a**2) * R * Rdot) / delta + (beta * a**2 * s * c * thetadot))
-        C[1,1] = ((alpha * R) / (sigma * np.sqrt(K))) * ((R**2 + a**2) - a * Lz)
-        C[1,2] = ((beta * a * np.ocs(theta)) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        C[1,3] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
+        p = (R**2 + a**2) - a * Lz
+        rho = R**2 + a**2 * np.cos(theta)**2
 
-        C[2,0] = (a / np.sqrt(K)) * ((alpha * R * Rdot) / delta + ((beta * c * thetadot) / s))
-        C[2,1] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
-        C[2,2] = ((a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        C[2,3] = (1 / np.sqrt(K)) * ((a**2 * c * Rdot) / delta - ((R * thetadot) / s))
+        LAMBDA[0,0] = (-a * (a * np.sin(theta)**2 - Lz) + ((R**2 + a**2) / delta) * p) / rho
+        LAMBDA[0,1] = Rdot
+        LAMBDA[0,2] = thetadot
+        LAMBDA[0,3] = self.phidot(t)
+        
+        LAMBDA[1,0] = (1 / np.sqrt(K)) * ((alpha * (R**2 + a**2) * R * Rdot) / delta + (beta * a**2 * s * c * thetadot))
+        LAMBDA[1,1] = ((alpha * R) / (sigma * np.sqrt(K))) * ((R**2 + a**2) - a * Lz)
+        LAMBDA[1,2] = ((beta * a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        LAMBDA[1,3] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
 
-        C[3,0] = alpha * ((R**2 + a**2) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
-        C[3,1] = alpha * Rdot
-        C[3,2] = beta * thetadot
-        C[3,3] = ((alpha * a) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
+        LAMBDA[2,0] = (a / np.sqrt(K)) * ((alpha * R * Rdot) / delta + ((beta * c * thetadot) / s))
+        LAMBDA[2,1] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
+        LAMBDA[2,2] = ((a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        LAMBDA[2,3] = (1 / np.sqrt(K)) * ((a**2 * c * Rdot) / delta - ((R * thetadot) / s))
 
-        self.C = C
+        LAMBDA[3,0] = alpha * ((R**2 + a**2) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
+        LAMBDA[3,1] = alpha * Rdot
+        LAMBDA[3,2] = beta * thetadot
+        LAMBDA[3,3] = ((alpha * a) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
+
+        self.LAMBDA = LAMBDA
 
     def whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
         """
@@ -675,6 +755,122 @@ class TDECalculator:
           + (self.Rstar * z_pos)**2
         )
         dEnergy_random = -1/dist + 1/R_TDE
+        dT_random = np.where(
+            dEnergy_random < 0,
+            2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
+            0
+        )
+
+        # 8. Unperturbed motion
+        dist0 = np.sqrt(
+            (R_TDE * np.cos(Phi_TDE) + self.Rstar * rr[:, None] * n[0])**2
+          + (R_TDE * np.sin(Phi_TDE) + self.Rstar * rr[:, None] * n[1])**2
+          + (self.Rstar * rr[:, None] * n[2])**2
+        )
+        dEnergy_unperturbed = -1/dist0 + 1/R_TDE
+        dT_unperturbed = np.where(
+            dEnergy_unperturbed < 0,
+            2 * np.pi / np.abs(-2 * dEnergy_unperturbed)**1.5,
+            0
+        )
+
+        # 9. Normalize
+        DeltaE = self.Rstar / self.Rp**2
+        DeltaT = 1 / DeltaE**1.5
+
+        dEnergy_random        /= DeltaE
+        dEnergy_unperturbed   /= DeltaE
+        dT_random             /= DeltaT
+        dT_unperturbed        /= DeltaT
+
+        return {
+            'rr':                   rr,
+            'directions':           n,
+            'dEnergy_random':       dEnergy_random,
+            'dT_random':            dT_random,
+            'dEnergy_unperturbed':  dEnergy_unperturbed,
+            'dT_unperturbed':       dT_unperturbed,
+            'dMass':                dMass_random
+        }
+    
+    def rel_whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
+        """
+        At the TDE moment, sample N_Omega random directions on the sphere,
+        compute perturbed and unperturbed energies & orbital periods,
+        and normalize them by DeltaE and DeltaT.
+        Returns a dict with keys:
+          'rr', 'directions', 
+          'dEnergy_random', 'dT_random',
+          'dEnergy_unperturbed', 'dT_unperturbed'
+        """
+        rho = self.rho
+        # 1. Interpolate t_TDE quantities
+        R_TDE   = self.R_TDE
+        Phi_TDE = self.Phi_TDE
+        i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
+        frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
+
+        xi_r_TDE = (self.xi_r[:, :, i0]
+                    + frac * (self.xi_r[:, :, i1] - self.xi_r[:, :, i0]))
+        xi_h_TDE = (self.xi_h[:, :, i0]
+                    + frac * (self.xi_h[:, :, i1] - self.xi_h[:, :, i0]))
+
+        # 2. Sample random directions
+        x, y, z = np.random.normal(size=(3, N_Omega))
+        norm     = np.sqrt(x**2 + y**2 + z**2)
+        n        = np.vstack((x, y, z)) / norm   # shape (3, N_Omega)
+
+        # 3. Angular basis
+        th = np.sqrt(1 - n[2]**2)
+        dndtheta = np.vstack((
+            n[0] * n[2] / th,
+            n[1] * n[2] / th,
+           -th
+        ))
+        dndphi = np.vstack((
+           -n[1],
+            n[0],
+            np.zeros(N_Omega)
+        ))
+
+        # 4. Build radial grid and mass‐shells
+        rr = (self.r[:-1] + self.r[1:]) / 2        # (nr-1,)
+        dr = (self.r[1:]  - self.r[:-1])
+        
+        # compute dMass for each fluid element
+        dMass_random = rr[:, None]**2 * dr[:, None] * (4 * np.pi / N_Omega) * (rho[:-1, None] + rho[1:, None]) / 2
+        dMass_random = dMass_random * np.ones((1, N_Omega))
+
+        # -- Displacements interpolation onto rr
+        xi_r_interp = np.array([
+            [np.interp(rr, self.r, xi_r_TDE[a, b])
+             for b in range(3)]
+            for a in range(3)
+        ])  # shape (3,3,nr-1)
+        xi_h_interp = np.array([
+            [np.interp(rr, self.r, xi_h_TDE[a, b])
+             for b in range(3)]
+            for a in range(3)
+        ])  # shape (3,3,nr-1)
+
+        # 5. Compute total displacement xi[a, r, dir]
+        xi = (
+            np.einsum('ia,ja,ka,jkr->ira',   n,    n,    n,    xi_r_interp)
+          + 2*np.einsum('ia,ja,ka,jkr->ira', dndtheta, n, dndtheta, xi_h_interp)
+          + 2*np.einsum('ia,ja,ka,jkr,a->ira',
+                        dndphi,    n, dndphi,    xi_h_interp,
+                        1/(1 - n[2]**2))
+        )  # shape (3, nr-1, N_Omega)
+
+        i = self.i_TDE
+        g_i = self.G[:, :, i]
+        lam_i = self.LAMBDA[:, :, i]
+
+        # ξ^μ = λ^μ_a * ξ^a
+        xi_mu = np.einsum('ma,arb->mrb', lam_i[:, 1:], xi)
+
+        # δE = -g_μν λ^μ_0 ξ^ν
+        dEnergy_random = -np.einsum('mn,m,nrb->rb', g_i, lam_i[:, 0], xi_mu)
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
