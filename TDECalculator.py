@@ -863,14 +863,23 @@ class TDECalculator:
         )  # shape (3, nr-1, N_Omega)
 
         i = self.i_TDE
-        g_i = self.G[:, :, i]
-        lam_i = self.LAMBDA[:, :, i]
+        g_i = self.G[:, :, i]      # g_{βγ}
+        lam_i = self.LAMBDA[:, :, i]  # λ^μ_a
+        C_i = self.C[:, :, :, i]      # Γ^γ_{αt}
 
-        # ξ^μ = λ^μ_a * ξ^a
-        xi_mu = np.einsum('ma,arb->mrb', lam_i[:, 1:], xi)
+        Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
+        lambda_i_alpha = lam_i[:, 1:]                                  # Shape (4, 3) = λ_i^α
+        lambda_0_beta = lam_i[:, 0]
 
-        # δE = -g_μν λ^μ_0 ξ^ν
-        dEnergy_random = -np.einsum('mn,m,nrb->rb', g_i, lam_i[:, 0], xi_mu)
+        # Step 1: contraction over α
+        intermediate = np.einsum('ia,ga->ig', lambda_i_alpha.T, Gamma_alpha_t)  # (3, 4)
+
+        # Step 2: apply to xi (generalized displacement tensor)
+        term = np.einsum('i...,ig->...g', xi, intermediate)
+
+        # Step 3: Contract with λ_0^β and g_{βγ}
+        lambda_0_beta = lam_i[:, 0]   
+        dEnergy_random = -np.einsum('bg,b,rag->ra', g_i, lambda_0_beta, term)
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
