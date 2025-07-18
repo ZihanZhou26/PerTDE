@@ -900,7 +900,7 @@ class TDECalculator:
         )
 
         # 9. Normalize
-        DeltaE = self.Rstar / self.Rp**2
+        DeltaE = ((2.1e-4) * self.Mstar**(2/3)) / self.Rstar # from Eqn 8 of Ryu+ 2020a
         DeltaT = 1 / DeltaE**1.5
 
         dEnergy_random        /= DeltaE
