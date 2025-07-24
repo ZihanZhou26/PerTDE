@@ -641,23 +641,23 @@ class TDECalculator:
         beta = 1 / alpha
 
         LAMBDA[0,0] = tdot
-        LAMBDA[0,1] = rdot
-        LAMBDA[0,2] = thetadot
-        LAMBDA[0,3] = phidot
+        LAMBDA[1,0] = rdot
+        LAMBDA[2,0] = thetadot
+        LAMBDA[3,0] = phidot
         
-        LAMBDA[1,0] = (1 / np.sqrt(K)) * ((alpha * (r**2 + a**2) * r * rdot) / delta + (beta * a**2 * s * c * thetadot))
+        LAMBDA[0,1] = (1 / np.sqrt(K)) * ((alpha * (r**2 + a**2) * r * rdot) / delta + (beta * a**2 * s * c * thetadot))
         LAMBDA[1,1] = ((alpha * r) / (sigma * np.sqrt(K))) * ((r**2 + a**2) - a * Lz)
-        LAMBDA[1,2] = ((beta * a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        LAMBDA[1,3] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
+        LAMBDA[2,1] = ((beta * a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        LAMBDA[3,1] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
 
-        LAMBDA[2,0] = (a / np.sqrt(K)) * ((alpha * r * rdot) / delta + ((beta * c * thetadot) / s))
-        LAMBDA[2,1] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
+        LAMBDA[0,2] = (a / np.sqrt(K)) * ((alpha * r * rdot) / delta + ((beta * c * thetadot) / s))
+        LAMBDA[1,2] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
         LAMBDA[2,2] = ((a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        LAMBDA[2,3] = (1 / np.sqrt(K)) * ((a**2 * c * rdot) / delta - ((r * thetadot) / s))
+        LAMBDA[3,2] = (1 / np.sqrt(K)) * ((a**2 * c * rdot) / delta - ((r * thetadot) / s))
 
-        LAMBDA[3,0] = alpha * ((r**2 + a**2) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
-        LAMBDA[3,1] = alpha * rdot
-        LAMBDA[3,2] = beta * thetadot
+        LAMBDA[0,3] = alpha * ((r**2 + a**2) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
+        LAMBDA[1,3] = alpha * rdot
+        LAMBDA[2,3] = beta * thetadot
         LAMBDA[3,3] = ((alpha * a) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
 
         self.LAMBDA = LAMBDA
@@ -869,11 +869,11 @@ class TDECalculator:
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
-        lambda_i_alpha = lam_i[1:, :]                            # Shape (3, 4) = λ_i^α
-        lambda_0_beta = lam_i[0, :]
+        lambda_i_alpha = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
+        lambda_0_beta = lam_i[:, 0]
 
         # Step 1: contraction over α
-        intermediate = np.einsum('ai,ga->gi', lambda_i_alpha.T, Gamma_alpha_t)
+        intermediate = np.einsum('ai,ga->gi', lambda_i_alpha, Gamma_alpha_t)
 
         # Step 2: apply to xi (generalized displacement tensor)
         term = np.einsum('ard,ga->rdg', X, intermediate)
