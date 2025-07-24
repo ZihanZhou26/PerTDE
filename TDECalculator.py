@@ -71,9 +71,6 @@ class TDECalculator:
         if self.orbit == "rel":
             self._compute_rel_orbit()
             self._compute_relativistic_tidal_field()
-            self.kerr_metric()
-            self.christoffel_symb()
-            self.rel_lambda()
         else:
             self._compute_orbit(Omegap)
             self._compute_tidal_field()
@@ -203,10 +200,12 @@ class TDECalculator:
         rho = radius**2 + a**2 * np.cos(theta)**2
         delta = radius**2 - 2 * radius + a**2
 
+        tdot = (-a * (a * np.sin(theta)**2 - Lz) + ((radius**2 + a**2) / delta) * p) / rho
         Rdot = (np.sign(tau) * np.sqrt(p**2 - delta * (radius**2 + (Lz - a)**2))) / rho
         phidot = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho  
         psidot = np.abs(a - Lz) * (((radius**2 + a**2) - a * Lz) / ((a - Lz)**2 + radius**2) + a * (Lz - a) / (a - Lz)**2) / radius**2
 
+        self.tdot = cp.interpolate.interp1d(tau, tdot, kind='cubic', fill_value='extrapolate')
         self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
         self.phidot = cp.interpolate.interp1d(tau, phidot, kind='cubic', fill_value='extrapolate')
         self.psidot = cp.interpolate.interp1d(tau, psidot, kind='cubic', fill_value='extrapolate')
@@ -533,7 +532,10 @@ class TDECalculator:
         """
         if self.orbit != "nwtn":
             R = self.R(self.t)
+            Rdot = self.Rdot(self.t)
             Phi = self.Phi(self.t)
+            phidot = self.phidot(self.t)
+            tdot = self.tdot(self.t)
         else:
             R = self.R
             Phi = self.Phi
@@ -556,121 +558,107 @@ class TDECalculator:
         # Record corresponding orbital radius & phase
         self.i_TDE = idx
         self.R_TDE = np.interp(self.t_TDE, self.t, R)
+        if self.orbit != "nwtn": 
+            self.Rdot_TDE = np.interp(self.t_TDE, self.t, Rdot)
+            self.phidot_TDE = np.interp(self.t_TDE, self.t, phidot)
+            self.tdot_TDE = np.interp(self.t_TDE, self.t, tdot)
         self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
 
-    def kerr_metric(self):
-        N = self.N
+    def kerr_metric(self, r, theta):
         # Initialize arrays: G[a,b,i]
-        G = np.zeros((4, 4, N))
-        theta = np.pi/2
-        t, a = self.t, self.a
-        R = self.R(t)
+        G = np.zeros((4, 4))
+        a = self.a
         s, c = np.sin(theta), np.cos(theta)
-        delta = R**2 + a**2 - 2 * R
-        sigma = R**2 + a**2 * c**2
-        A = (R**2 + a**2)**a - sigma * a**2 * s**2
+        delta = r**2 + a**2 - 2 * r
+        sigma = r**2 + a**2 * c**2
+        A = (r**2 + a**2)**2 - sigma * a**2 * s**2
 
-        G[0,0] = -A / (sigma * delta)
-        G[1,1] = delta / sigma
-        G[2,2] = 1 / sigma
-        G[3,3] = (delta - (a**2 * s**2)) / (sigma * delta * s**2)
+        G[0,0] = -(1 - ((2*r)/sigma))
+        G[1,1] = sigma / delta
+        G[2,2] = sigma
+        G[3,3] = (A / sigma) * s**2
 
-        G[0,3] = G[3,0] = -(2 * a * R) / (sigma * delta)
-
-        G[0,1] = G[0,2] = 0
-        G[1,0] = G[1,2] = G[1,3] = 0
-        G[2,0] = G[2,1] = G[2,3] = 0
-        G[3,1] = G[3,2] = 0
+        G[0,3] = G[3,0] = -(2 * a * r * s**2) / sigma
 
         self.G = G
 
-    def christoffel_symb(self):
-        N = self.N
-        C = np.zeros((4, 4, 4, N))
+    def christoffel_symb(self, r, theta):
+        C = np.zeros((4, 4, 4))
         theta = np.pi/2
         s, c = np.sin(theta), np.cos(theta)
-        t, a = self.t, self.a
-        R = self.R(t)
+        a = self.a
 
-        delta = R**2 + a**2 - 2 * R
-        sigma = R**2 + a**2 * c**2
-        A = (R**2 + a**2)**a - sigma * a**2 * s**2
+        delta = r**2 + a**2 - 2 * r
+        sigma = r**2 + a**2 * c**2
+        A = (r**2 + a**2)**2 - sigma * a**2 * s**2
 
-        C[1,0,0] = (delta / sigma**3) * (2 * R**2 - sigma)
-        C[2,0,0] = -(2 * a**2 * R * s * c) / sigma**3
+        C[1,0,0] = (delta / sigma**3) * (2 * r**2 - sigma)
+        C[2,0,0] = -(2 * a**2 * r * s * c) / sigma**3
 
-        C[1,1,1] = (R / sigma) - ((R - 1) / delta)
+        C[1,1,1] = (r / sigma) - ((r - 1) / delta)
         C[2,1,1] = (a**2 * s * c) / (sigma * delta)
 
-        C[1,2,2] = -(R * delta) / sigma
+        C[1,2,2] = -(r * delta) / sigma
         C[2,2,2] = -(a**2 * s * c) / sigma
 
-        C[1,3,3] = -((delta * s**2)/sigma) * (R - (((a**2 * s**2) / sigma**2) * (2*R**2 - sigma)))
-        C[2,3,3] = -((s*c)/sigma**3) * ((R**2 + a**2) * A - sigma * delta * a**2 * s**2)
+        C[1,3,3] = -((delta * s**2)/sigma) * (r - (((a**2 * s**2) / sigma**2) * (2*r**2 - sigma)))
+        C[2,3,3] = -((s*c)/sigma**3) * ((r**2 + a**2) * A - sigma * delta * a**2 * s**2)
 
-        C[0,0,1] = ((R**2 + a**2) / (sigma**2 * delta)) * (2*R**2 - sigma)
-        C[3,0,1] = (a / (sigma**2 * delta)) * (2*R**2 - sigma)
+        C[0,0,1] = ((r**2 + a**2) / (sigma**2 * delta)) * (2*r**2 - sigma)
+        C[3,0,1] = (a / (sigma**2 * delta)) * (2*r**2 - sigma)
 
-        C[0,0,2] = -(2 * a**2 * R * s * c) / sigma**2
-        C[3,0,2] = -(2 * a * R * c) / (sigma**2 * s)
+        C[0,0,2] = -(2 * a**2 * r * s * c) / sigma**2
+        C[3,0,2] = -(2 * a * r * c) / (sigma**2 * s)
 
-        C[1,0,3] = -((a * delta * s**2) / sigma**3) * (2*R**2 - sigma)
-        C[2,0,3] = (2 * a * R * (R**2 + a**2) * s * c) / sigma**3
+        C[1,0,3] = -((a * delta * s**2) / sigma**3) * (2*r**2 - sigma)
+        C[2,0,3] = (2 * a * r * (r**2 + a**2) * s * c) / sigma**3
 
         C[1,1,2] = -(a**2 * s * c) / sigma
-        C[2,1,2] = R / sigma
+        C[2,1,2] = r / sigma
 
-        C[0,1,3] = -((a * s**2) / (sigma * delta)) * (((2*R**2)/sigma) * (R**2 + a**2) + R**2 - a**2)
-        C[3,1,3] = (R / sigma) - (((a**2 * s**2) / (sigma * delta)) * (R - 1 + ((2*R**2)/sigma)))
+        C[0,1,3] = -((a * s**2) / (sigma * delta)) * (((2*r**2)/sigma) * (r**2 + a**2) + r**2 - a**2)
+        C[3,1,3] = (r / sigma) - (((a**2 * s**2) / (sigma * delta)) * (r - 1 + ((2*r**2)/sigma)))
 
-        C[0,2,3] = (2 * a**3 * R * s**3 * c) / sigma**2
-        C[3,2,3] = (c/s) * (1 + ((2*a**2 * R * s**2)/sigma**2))
+        C[0,2,3] = (2 * a**3 * r * s**3 * c) / sigma**2
+        C[3,2,3] = (c/s) * (1 + ((2*a**2 * r * s**2)/sigma**2))
 
         self.C = C
 
-    def rel_lambda(self):
-        N = self.N
+    def rel_lambda(self, tdot, r, rdot, theta, thetadot, phidot):
         # Initialize arrays: LAMBDA[a,b,i]
-        LAMBDA = np.zeros((4, 4, N))
+        LAMBDA = np.zeros((4, 4))
 
         # Precompute cos(Φ) and sin(Φ)
-        t = self.t
         a = self.a 
         q = 0.0
-        theta = np.pi/2
-        thetadot = 0
         c, s = np.cos(theta), np.sin(theta)
-        R, Rdot = self.R(t), self.Rdot(t)
         Lz = self.mom_kerr_analytic(self.Rp, self.a)
         K = q + (Lz - a)**2
-        sigma = R**2 + a**2 * np.cos(theta)**2
-        delta = R**2 + a**2 - 2 * R
+        sigma = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 + a**2 - 2 * r
 
-        alpha = np.sqrt((K - a**2 * np.cos(theta)**2) / (R**2 + K))
+        alpha = np.sqrt((K - a**2 * np.cos(theta)**2) / (r**2 + K))
         beta = 1 / alpha
 
-        p = (R**2 + a**2) - a * Lz
-        rho = R**2 + a**2 * np.cos(theta)**2
-
-        LAMBDA[0,0] = (-a * (a * np.sin(theta)**2 - Lz) + ((R**2 + a**2) / delta) * p) / rho
-        LAMBDA[0,1] = Rdot
+        LAMBDA[0,0] = tdot
+        LAMBDA[0,1] = rdot
         LAMBDA[0,2] = thetadot
-        LAMBDA[0,3] = self.phidot(t)
+        LAMBDA[0,3] = phidot
         
-        LAMBDA[1,0] = (1 / np.sqrt(K)) * ((alpha * (R**2 + a**2) * R * Rdot) / delta + (beta * a**2 * s * c * thetadot))
-        LAMBDA[1,1] = ((alpha * R) / (sigma * np.sqrt(K))) * ((R**2 + a**2) - a * Lz)
+        LAMBDA[1,0] = (1 / np.sqrt(K)) * ((alpha * (r**2 + a**2) * r * rdot) / delta + (beta * a**2 * s * c * thetadot))
+        LAMBDA[1,1] = ((alpha * r) / (sigma * np.sqrt(K))) * ((r**2 + a**2) - a * Lz)
         LAMBDA[1,2] = ((beta * a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        LAMBDA[1,3] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
+        LAMBDA[1,3] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
 
-        LAMBDA[2,0] = (a / np.sqrt(K)) * ((alpha * R * Rdot) / delta + ((beta * c * thetadot) / s))
-        LAMBDA[2,1] = (a / np.sqrt(K)) * (((R**2 + a**2) * c * Rdot) / delta - R * s * thetadot)
+        LAMBDA[2,0] = (a / np.sqrt(K)) * ((alpha * r * rdot) / delta + ((beta * c * thetadot) / s))
+        LAMBDA[2,1] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
         LAMBDA[2,2] = ((a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        LAMBDA[2,3] = (1 / np.sqrt(K)) * ((a**2 * c * Rdot) / delta - ((R * thetadot) / s))
+        LAMBDA[2,3] = (1 / np.sqrt(K)) * ((a**2 * c * rdot) / delta - ((r * thetadot) / s))
 
-        LAMBDA[3,0] = alpha * ((R**2 + a**2) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
-        LAMBDA[3,1] = alpha * Rdot
+        LAMBDA[3,0] = alpha * ((r**2 + a**2) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
+        LAMBDA[3,1] = alpha * rdot
         LAMBDA[3,2] = beta * thetadot
-        LAMBDA[3,3] = ((alpha * a) / (sigma * delta)) * ((R**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
+        LAMBDA[3,3] = ((alpha * a) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
 
         self.LAMBDA = LAMBDA
 
@@ -806,7 +794,10 @@ class TDECalculator:
         rho = self.rho
         # 1. Interpolate t_TDE quantities
         R_TDE   = self.R_TDE
+        Rdot_TDE = self.Rdot_TDE
+        tdot_TDE = self.tdot_TDE
         Phi_TDE = self.Phi_TDE
+        phidot_TDE = self.phidot_TDE
         i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
 
@@ -814,6 +805,10 @@ class TDECalculator:
                     + frac * (self.xi_r[:, :, i1] - self.xi_r[:, :, i0]))
         xi_h_TDE = (self.xi_h[:, :, i0]
                     + frac * (self.xi_h[:, :, i1] - self.xi_h[:, :, i0]))
+        
+        self.kerr_metric(R_TDE, np.pi/2)
+        self.christoffel_symb(R_TDE, np.pi/2)
+        self.rel_lambda(R_TDE, tdot_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
 
         # 2. Sample random directions
         x, y, z = np.random.normal(size=(3, N_Omega))
@@ -862,24 +857,29 @@ class TDECalculator:
                         1/(1 - n[2]**2))
         )  # shape (3, nr-1, N_Omega)
 
-        i = self.i_TDE
-        g_i = self.G[:, :, i]      # g_{βγ}
-        lam_i = self.LAMBDA[:, :, i]  # λ^μ_a
-        C_i = self.C[:, :, :, i]      # Γ^γ_{αt}
+        # 6. Perturbed positions at TDE
+        x_pos = rr[:, None] * n[0] + xi[0]
+        y_pos = rr[:, None] * n[1] + xi[1]
+        z_pos = rr[:, None] * n[2] + xi[2]
+
+        X = np.array([x_pos, y_pos, z_pos])
+
+        g_i = self.G[:, :]         # g_{βγ}
+        lam_i = self.LAMBDA[:, :]  # λ^μ_a
+        C_i = self.C[:, :, :]      # Γ^γ_{αt}
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
-        lambda_i_alpha = lam_i[:, 1:]                                  # Shape (4, 3) = λ_i^α
-        lambda_0_beta = lam_i[:, 0]
+        lambda_i_alpha = lam_i[1:, :]                            # Shape (3, 4) = λ_i^α
+        lambda_0_beta = lam_i[0, :]
 
         # Step 1: contraction over α
-        intermediate = np.einsum('ia,ga->ig', lambda_i_alpha.T, Gamma_alpha_t)  # (3, 4)
+        intermediate = np.einsum('ai,ga->gi', lambda_i_alpha.T, Gamma_alpha_t)
 
         # Step 2: apply to xi (generalized displacement tensor)
-        term = np.einsum('i...,ig->...g', xi, intermediate)
+        term = np.einsum('ard,ga->rdg', X, intermediate)
 
-        # Step 3: Contract with λ_0^β and g_{βγ}
-        lambda_0_beta = lam_i[:, 0]   
-        dEnergy_random = -np.einsum('bg,b,rag->ra', g_i, lambda_0_beta, term)
+        # Step 3: Contract with λ_0^β and g_{βγ}  
+        dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_0_beta, term)
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
@@ -900,7 +900,7 @@ class TDECalculator:
         )
 
         # 9. Normalize
-        DeltaE = ((2.1e-4) * self.Mstar**(2/3)) / self.Rstar # from Eqn 8 of Ryu+ 2020a
+        DeltaE = self.Rstar / self.Rp**2 # from Eqn 8 of Ryu+ 2020a
         DeltaT = 1 / DeltaE**1.5
 
         dEnergy_random        /= DeltaE
