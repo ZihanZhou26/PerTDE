@@ -50,7 +50,10 @@ class TDECalculator:
         self.Rtidal     = self.Rstar / self.mass_ratio**(1/3)
 
         # Interpolate gamma from external table
+        # if orbit =='nwtn':
         Masses, Gammas = np.loadtxt('M-gamma.txt', unpack=True)
+        # if orbit == 'rel':
+        #     Masses, Gammas = np.loadtxt('M-schwarz-gamma.txt', unpack=True)
         self.gamma = np.interp(self.Mstar, Masses, Gammas)
 
         # Gravitational binding energy U (in G M_star^2 / R_star)
@@ -648,11 +651,11 @@ class TDECalculator:
         LAMBDA[0,1] = (1 / np.sqrt(K)) * ((alpha * (r**2 + a**2) * r * rdot) / delta + (beta * a**2 * s * c * thetadot))
         LAMBDA[1,1] = ((alpha * r) / (sigma * np.sqrt(K))) * ((r**2 + a**2) - a * Lz)
         LAMBDA[2,1] = ((beta * a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        LAMBDA[3,1] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
+        LAMBDA[3,1] = (a / np.sqrt(K)) * ((alpha * r * rdot) / delta + ((beta * c * thetadot) / s))
 
-        LAMBDA[0,2] = (a / np.sqrt(K)) * ((alpha * r * rdot) / delta + ((beta * c * thetadot) / s))
-        LAMBDA[1,2] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
-        LAMBDA[2,2] = ((a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        LAMBDA[0,2] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
+        LAMBDA[1,2] = ((a * c) / (sigma * np.sqrt(K))) * ((r**2 + a**2) - a*Lz)
+        LAMBDA[2,2] = -(r / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
         LAMBDA[3,2] = (1 / np.sqrt(K)) * ((a**2 * c * rdot) / delta - ((r * thetadot) / s))
 
         LAMBDA[0,3] = alpha * ((r**2 + a**2) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
@@ -778,7 +781,10 @@ class TDECalculator:
             'dT_random':            dT_random,
             'dEnergy_unperturbed':  dEnergy_unperturbed,
             'dT_unperturbed':       dT_unperturbed,
-            'dMass':                dMass_random
+            'dMass':                dMass_random,
+            'x_pos':    x_pos,
+            'y_pos':    y_pos,
+            'z_pos':    z_pos
         }
     
     def rel_whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
@@ -915,7 +921,10 @@ class TDECalculator:
             'dT_random':            dT_random,
             'dEnergy_unperturbed':  dEnergy_unperturbed,
             'dT_unperturbed':       dT_unperturbed,
-            'dMass':                dMass_random
+            'dMass':                dMass_random,
+            'x_pos':    x_pos,
+            'y_pos':    y_pos,
+            'z_pos':    z_pos
         }
     
     def equator_sample(self, idx_from_tde=0, n_phi=3000):
