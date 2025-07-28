@@ -814,7 +814,7 @@ class TDECalculator:
         
         self.kerr_metric(R_TDE, np.pi/2)
         self.christoffel_symb(R_TDE, np.pi/2)
-        self.rel_lambda(R_TDE, tdot_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
+        self.rel_lambda(tdot_TDE, R_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
 
         # 2. Sample random directions
         x, y, z = np.random.normal(size=(3, N_Omega))
@@ -868,24 +868,30 @@ class TDECalculator:
         y_pos = rr[:, None] * n[1] + xi[1]
         z_pos = rr[:, None] * n[2] + xi[2]
 
-        X = np.array([x_pos, y_pos, z_pos])
+        # X = np.array([x_pos * self.Rstar, y_pos * self.Rstar, z_pos * self.Rstar])
 
-        g_i = self.G[:, :]         # g_{βγ}
-        lam_i = self.LAMBDA[:, :]  # λ^μ_a
-        C_i = self.C[:, :, :]      # Γ^γ_{αt}
+        # g_i = self.G[:, :]         # g_{βγ}
+        # lam_i = self.LAMBDA[:, :]  # λ^μ_a
+        # C_i = self.C[:, :, :]      # Γ^γ_{αt}
 
-        Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
-        lambda_i_alpha = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
-        lambda_0_beta = lam_i[:, 0]
+        # Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
+        # lambda_i_alpha = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
+        # lambda_0_beta = lam_i[:, 0]
 
-        # Step 1: contraction over α
-        intermediate = np.einsum('ai,ga->gi', lambda_i_alpha, Gamma_alpha_t)
+        # # Step 1: contraction over α
+        # intermediate = np.einsum('ai,ga->gi', lambda_i_alpha, Gamma_alpha_t)
 
-        # Step 2: apply to xi (generalized displacement tensor)
-        term = np.einsum('ard,ga->rdg', X, intermediate)
+        # # Step 2: apply to xi (generalized displacement tensor)
+        # term = np.einsum('ard,ga->rdg', X, intermediate)
 
-        # Step 3: Contract with λ_0^β and g_{βγ}  
-        dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_0_beta, term)
+        # # Step 3: Contract with λ_0^β and g_{βγ}  
+        # dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_0_beta, term)
+        dist  = np.sqrt(
+            (R_TDE * np.cos(Phi_TDE) + self.Rstar * x_pos)**2
+          + (R_TDE * np.sin(Phi_TDE) + self.Rstar * y_pos)**2
+          + (self.Rstar * z_pos)**2
+        )
+        dEnergy_random = -1/dist + 1/R_TDE
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
@@ -906,7 +912,7 @@ class TDECalculator:
         )
 
         # 9. Normalize
-        DeltaE = self.Rstar / self.Rp**2 # from Eqn 8 of Ryu+ 2020a
+        DeltaE = self.Rstar / self.Rp**2 
         DeltaT = 1 / DeltaE**1.5
 
         dEnergy_random        /= DeltaE
