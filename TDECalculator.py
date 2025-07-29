@@ -604,23 +604,23 @@ class TDECalculator:
         C[1,3,3] = -((delta * s**2)/sigma) * (r - (((a**2 * s**2) / sigma**2) * (2*r**2 - sigma)))
         C[2,3,3] = -((s*c)/sigma**3) * ((r**2 + a**2) * A - sigma * delta * a**2 * s**2)
 
-        C[0,0,1] = ((r**2 + a**2) / (sigma**2 * delta)) * (2*r**2 - sigma)
-        C[3,0,1] = (a / (sigma**2 * delta)) * (2*r**2 - sigma)
+        C[0,0,1] = C[0,1,0] = ((r**2 + a**2) / (sigma**2 * delta)) * (2*r**2 - sigma)
+        C[3,0,1] = C[3,1,0] = (a / (sigma**2 * delta)) * (2*r**2 - sigma)
 
-        C[0,0,2] = -(2 * a**2 * r * s * c) / sigma**2
-        C[3,0,2] = -(2 * a * r * c) / (sigma**2 * s)
+        C[0,0,2] = C[0,2,0] = -(2 * a**2 * r * s * c) / sigma**2
+        C[3,0,2] = C[3,2,0] = -(2 * a * r * c) / (sigma**2 * s)
 
-        C[1,0,3] = -((a * delta * s**2) / sigma**3) * (2*r**2 - sigma)
-        C[2,0,3] = (2 * a * r * (r**2 + a**2) * s * c) / sigma**3
+        C[1,0,3] = C[1,3,0] = -((a * delta * s**2) / sigma**3) * (2*r**2 - sigma)
+        C[2,0,3] = C[2,3,0] = (2 * a * r * (r**2 + a**2) * s * c) / sigma**3
 
-        C[1,1,2] = -(a**2 * s * c) / sigma
-        C[2,1,2] = r / sigma
+        C[1,1,2] = C[1,2,1] = -(a**2 * s * c) / sigma
+        C[2,1,2] = C[2,2,1] = r / sigma
 
-        C[0,1,3] = -((a * s**2) / (sigma * delta)) * (((2*r**2)/sigma) * (r**2 + a**2) + r**2 - a**2)
-        C[3,1,3] = (r / sigma) - (((a**2 * s**2) / (sigma * delta)) * (r - 1 + ((2*r**2)/sigma)))
+        C[0,1,3] = C[0,3,1] = -((a * s**2) / (sigma * delta)) * (((2*r**2)/sigma) * (r**2 + a**2) + r**2 - a**2)
+        C[3,1,3] = C[3,3,1] = (r / sigma) - (((a**2 * s**2) / (sigma * delta)) * (r - 1 + ((2*r**2)/sigma)))
 
-        C[0,2,3] = (2 * a**3 * r * s**3 * c) / sigma**2
-        C[3,2,3] = (c/s) * (1 + ((2*a**2 * r * s**2)/sigma**2))
+        C[0,2,3] = C[0,3,2] = (2 * a**3 * r * s**3 * c) / sigma**2
+        C[3,2,3] = C[3,3,2] = (c/s) * (1 + ((2*a**2 * r * s**2)/sigma**2))
 
         self.C = C
 
@@ -866,23 +866,32 @@ class TDECalculator:
         z_pos = rr[:, None] * n[2] + xi[2]
 
         X = np.array([x_pos * self.Rstar, y_pos * self.Rstar, z_pos * self.Rstar])
+        print(X.shape)
 
         g_i = self.G[:, :]         # g_{βγ}
         lam_i = self.LAMBDA[:, :]  # λ^μ_a
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
-        lambda_i_alpha = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
-        lambda_0_beta = lam_i[:, 0]
+        lambda_alpha_i = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
+        lambda_beta_0 = lam_i[:, 0]
 
         # Step 1: contraction over α
-        intermediate = np.einsum('ai,ga->gi', lambda_i_alpha, Gamma_alpha_t)
+        intermediate = np.einsum('ai,ga->gi', lambda_alpha_i, Gamma_alpha_t)
 
         # Step 2: apply to xi (generalized displacement tensor)
         term = np.einsum('ard,ga->rdg', X, intermediate)
 
         # Step 3: Contract with λ_0^β and g_{βγ}  
-        dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_0_beta, term)
+        dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term)
+        # dEnergy_random = -np.einsum("bg,b,i...,ai,ga->", g_i, lambda_beta_0, X, lambda_alpha_i, Gamma_alpha_t)
+        dist  = np.sqrt(
+            (R_TDE * np.cos(Phi_TDE) + self.Rstar * x_pos)**2
+          + (R_TDE * np.sin(Phi_TDE) + self.Rstar * y_pos)**2
+          + (self.Rstar * z_pos)**2
+        )
+        dEnergy_random = -1/dist + 1/R_TDE
+
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
