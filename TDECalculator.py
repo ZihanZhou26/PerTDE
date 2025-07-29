@@ -866,7 +866,6 @@ class TDECalculator:
         z_pos = rr[:, None] * n[2] + xi[2]
 
         X = np.array([x_pos * self.Rstar, y_pos * self.Rstar, z_pos * self.Rstar])
-        print(X.shape)
 
         g_i = self.G[:, :]         # g_{βγ}
         lam_i = self.LAMBDA[:, :]  # λ^μ_a
