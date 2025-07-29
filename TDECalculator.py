@@ -50,10 +50,7 @@ class TDECalculator:
         self.Rtidal     = self.Rstar / self.mass_ratio**(1/3)
 
         # Interpolate gamma from external table
-        # if orbit =='nwtn':
         Masses, Gammas = np.loadtxt('M-gamma.txt', unpack=True)
-        # if orbit == 'rel':
-        #     Masses, Gammas = np.loadtxt('M-schwarz-gamma.txt', unpack=True)
         self.gamma = np.interp(self.Mstar, Masses, Gammas)
 
         # Gravitational binding energy U (in G M_star^2 / R_star)
@@ -868,30 +865,24 @@ class TDECalculator:
         y_pos = rr[:, None] * n[1] + xi[1]
         z_pos = rr[:, None] * n[2] + xi[2]
 
-        # X = np.array([x_pos * self.Rstar, y_pos * self.Rstar, z_pos * self.Rstar])
+        X = np.array([x_pos * self.Rstar, y_pos * self.Rstar, z_pos * self.Rstar])
 
-        # g_i = self.G[:, :]         # g_{βγ}
-        # lam_i = self.LAMBDA[:, :]  # λ^μ_a
-        # C_i = self.C[:, :, :]      # Γ^γ_{αt}
+        g_i = self.G[:, :]         # g_{βγ}
+        lam_i = self.LAMBDA[:, :]  # λ^μ_a
+        C_i = self.C[:, :, :]      # Γ^γ_{αt}
 
-        # Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
-        # lambda_i_alpha = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
-        # lambda_0_beta = lam_i[:, 0]
+        Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
+        lambda_i_alpha = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
+        lambda_0_beta = lam_i[:, 0]
 
-        # # Step 1: contraction over α
-        # intermediate = np.einsum('ai,ga->gi', lambda_i_alpha, Gamma_alpha_t)
+        # Step 1: contraction over α
+        intermediate = np.einsum('ai,ga->gi', lambda_i_alpha, Gamma_alpha_t)
 
-        # # Step 2: apply to xi (generalized displacement tensor)
-        # term = np.einsum('ard,ga->rdg', X, intermediate)
+        # Step 2: apply to xi (generalized displacement tensor)
+        term = np.einsum('ard,ga->rdg', X, intermediate)
 
-        # # Step 3: Contract with λ_0^β and g_{βγ}  
-        # dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_0_beta, term)
-        dist  = np.sqrt(
-            (R_TDE * np.cos(Phi_TDE) + self.Rstar * x_pos)**2
-          + (R_TDE * np.sin(Phi_TDE) + self.Rstar * y_pos)**2
-          + (self.Rstar * z_pos)**2
-        )
-        dEnergy_random = -1/dist + 1/R_TDE
+        # Step 3: Contract with λ_0^β and g_{βγ}  
+        dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_0_beta, term)
         dT_random = np.where(
             dEnergy_random < 0,
             2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
