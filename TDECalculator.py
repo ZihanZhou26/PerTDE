@@ -11,7 +11,7 @@ class TDECalculator:
     orbiting a supermassive black hole, plus random‐sampling diagnostics
     at the moment of disruption.
     """
-    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, N=1000):
+    def __init__(self, star_name, orbit="nwtn", MBH=1e6, Rp=17, a=0.0, E=1.0, Q=0.0, N=1000):
         """
         Parameters:
         -----------
@@ -24,12 +24,14 @@ class TDECalculator:
         N : int
             Number of time steps for the orbit integration.
         """
-        self.star_name = star_name
-        self.MBH       = MBH
-        self.Rp        = Rp
-        self.N         = N
-        self.a         = a
-        self.orbit     = orbit
+        self.star_name    = star_name
+        self.MBH          = MBH
+        self.Rp           = Rp
+        self.OrbitEnergy  = E
+        self.Carter       = Q
+        self.N            = N
+        self.a            = a
+        self.orbit        = orbit
 
         # ——— Checks ——— 
         allowed = {"nwtn", "rel"}
@@ -98,25 +100,27 @@ class TDECalculator:
     def geodesic_kerr_out(self, τ, y):
         """
         Computes outgoing geodesics for equatorial parabolic prograde Kerr orbits.
+        add energy
         """
         t, r, phi, psi = y
 
         sign = 1
         theta = np.pi/2
-        q = 0.0
+        q = self.Carter
+        E = self.OrbitEnergy
         rp = self.Rp
         a = self.a
         Lz = 0
 
         Lz = self.mom_kerr_analytic(rp, a)
 
-        p = (r**2 + a**2) - a * Lz
+        p = E * (r**2 + a**2) - a * Lz
         rho = r**2 + a**2 * np.cos(theta)**2
         delta = r**2 - 2 * r + a**2
 
-        dt_dτ = (-a * (a * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
-        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
-        dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
+        dt_dτ = (-a * (a * E * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
+        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a * E)**2 + q))) / rho
+        dφ_dτ = (-(a * E  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
         # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho 
 
         dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
@@ -131,20 +135,21 @@ class TDECalculator:
 
         sign = -1
         theta = np.pi/2
-        q = 0.0
+        q = self.Carter
+        E = self.OrbitEnergy
         rp = self.Rp
         a = self.a
         Lz = 0
 
         Lz = self.mom_kerr_analytic(rp, a)
-    
-        p = (r**2 + a**2) - a * Lz
+
+        p = E * (r**2 + a**2) - a * Lz
         rho = r**2 + a**2 * np.cos(theta)**2
         delta = r**2 - 2 * r + a**2
 
-        dt_dτ = (-a * (a * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
-        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a)**2 + q))) / rho
-        dφ_dτ = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
+        dt_dτ = (-a * (a * E * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
+        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a * E)**2 + q))) / rho
+        dφ_dτ = (-(a * E  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
         # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho 
 
         dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
@@ -872,9 +877,11 @@ class TDECalculator:
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
+        Gamma_alpha_phi = C_i[:, :, 3]  
         lambda_alpha_i = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
         lambda_beta_0 = lam_i[:, 0]
 
+        # dE Calculation
         # Step 1: contraction over α
         intermediate = np.einsum('ai,ga->gi', lambda_alpha_i, Gamma_alpha_t)
 
@@ -883,13 +890,18 @@ class TDECalculator:
 
         # Step 3: Contract with λ_0^β and g_{βγ}  
         dEnergy_random = -np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term)
-        # dEnergy_random = -np.einsum("bg,b,i...,ai,ga->", g_i, lambda_beta_0, X, lambda_alpha_i, Gamma_alpha_t)
-        dist  = np.sqrt(
-            (R_TDE * np.cos(Phi_TDE) + self.Rstar * x_pos)**2
-          + (R_TDE * np.sin(Phi_TDE) + self.Rstar * y_pos)**2
-          + (self.Rstar * z_pos)**2
-        )
-        dEnergy_random = -1/dist + 1/R_TDE
+
+        # dLz Calculation
+        # Step 1: contraction over α
+        intermediate_phi = np.einsum('ai,ga->gi', lambda_alpha_i, Gamma_alpha_phi)
+
+        # Step 2: apply to xi (generalized displacement tensor)
+        term_phi = np.einsum('ard,ga->rdg', X, intermediate_phi)
+
+        # Step 3: Contract with λ_0^β and g_{βγ}  
+        dLz_random = np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term_phi)
+
+        
 
         dT_random = np.where(
             dEnergy_random < 0,
