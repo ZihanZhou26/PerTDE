@@ -159,14 +159,16 @@ class TDECalculator:
         a = self.a
         Lz = self.mom_kerr_analytic(rp, a)
         theta = np.pi/2
+        E = self.OrbitEnergy
+        q = self.Carter
 
         p = (radius**2 + a**2) - a * Lz
         rho = radius**2 + a**2 * np.cos(theta)**2
         delta = radius**2 - 2 * radius + a**2
 
-        tdot = (-a * (a * np.sin(theta)**2 - Lz) + ((radius**2 + a**2) / delta) * p) / rho
-        Rdot = (np.sign(tau) * np.sqrt(p**2 - delta * (radius**2 + (Lz - a)**2))) / rho
-        phidot = (-(a  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho  
+        tdot = (-a * (a * E * np.sin(theta)**2 - Lz) + ((radius**2 + a**2) / delta) * p) / rho
+        Rdot = (np.sqrt(p**2 - delta * (radius**2 + (Lz - a * E)**2 + q))) / rho
+        phidot = (-(a * E  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho  
         psidot = np.abs(a - Lz) * (((radius**2 + a**2) - a * Lz) / ((a - Lz)**2 + radius**2) + a * (Lz - a) / (a - Lz)**2) / radius**2
 
         self.tdot = cp.interpolate.interp1d(tau, tdot, kind='cubic', fill_value='extrapolate')
