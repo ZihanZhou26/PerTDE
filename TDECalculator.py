@@ -97,20 +97,17 @@ class TDECalculator:
         
         return num / ((-2 + rp) * rp)
 
-    def geodesic_kerr_out(self, τ, y):
+    def geodesic_kerr(self, τ, y):
         """
         Computes outgoing geodesics for equatorial parabolic prograde Kerr orbits.
-        add energy
         """
         t, r, phi, psi = y
 
-        sign = 1
         theta = np.pi/2
         q = self.Carter
         E = self.OrbitEnergy
         rp = self.Rp
         a = self.a
-        Lz = 0
 
         Lz = self.mom_kerr_analytic(rp, a)
 
@@ -119,36 +116,7 @@ class TDECalculator:
         delta = r**2 - 2 * r + a**2
 
         dt_dτ = (-a * (a * E * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
-        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a * E)**2 + q))) / rho
-        dφ_dτ = (-(a * E  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
-        # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho 
-
-        dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
-
-        return [dt_dτ, dr_dτ, dφ_dτ, dpsi_dτ]
-    
-    def geodesic_kerr_in(self, τ, y):
-        """
-        Computes inbound geodesics for equatorial parabolic prograde Kerr orbits.
-        """
-        t, r, phi, psi = y
-
-        sign = -1
-        theta = np.pi/2
-        q = self.Carter
-        E = self.OrbitEnergy
-        rp = self.Rp
-        a = self.a
-        Lz = 0
-
-        Lz = self.mom_kerr_analytic(rp, a)
-
-        p = E * (r**2 + a**2) - a * Lz
-        rho = r**2 + a**2 * np.cos(theta)**2
-        delta = r**2 - 2 * r + a**2
-
-        dt_dτ = (-a * (a * E * np.sin(theta)**2 - Lz) + ((r**2 + a**2) / delta) * p) / rho
-        dr_dτ = (sign * np.sqrt(p**2 - delta * (r**2 + (Lz - a * E)**2 + q))) / rho
+        dr_dτ = (np.sqrt(p**2 - delta * (r**2 + (Lz - a * E)**2 + q))) / rho
         dφ_dτ = (-(a * E  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho 
         # dθ_dτ = (np.sign(τ) * np.sqrt(q - np.cos(theta)**2 * (a**2 * (1 - E**2) + (Lz**2/np.sin(theta)**2)))) / rho 
 
@@ -164,30 +132,21 @@ class TDECalculator:
         rp = self.Rp
         ε = 1e-6
         tau_max = np.max(self.t)
-        tau_min = np.min(self.t)
 
         y0_out = [0.0, rp + ε, 0.0, 0.0]
-        sol_out = cp.integrate.solve_ivp(
-            self.geodesic_kerr_out,
+        sol_in = sol_out = cp.integrate.solve_ivp(
+            self.geodesic_kerr,
             (0, tau_max),
             y0_out,
             t_eval=self.t[self.t >= 0]
         )   
 
-        y0_in = [0.0, rp + ε, 0.0, 0.0]
-        sol_in = cp.integrate.solve_ivp(
-            self.geodesic_kerr_in,
-            (0, tau_min),
-            y0_in,
-            t_eval=self.t[self.t <= 0][::-1]
-        )
-
         # connect inbound and outbound leg
-        tau = np.hstack([sol_in.t[::-1], sol_out.t[1:]])
-        time = np.hstack([sol_in.y[0][::-1], sol_out.y[0][1:]])
+        tau = np.hstack([-sol_in.t[::-1], sol_out.t[1:]])
+        time = np.hstack([-sol_in.y[0][::-1], sol_out.y[0][1:]])
         radius = np.hstack([sol_in.y[1][::-1], sol_out.y[1][1:]])
-        phi = np.hstack([sol_in.y[2][::-1], sol_out.y[2][1:]])
-        psi = np.hstack([sol_in.y[3][::-1], sol_out.y[3][1:]])
+        phi = np.hstack([-sol_in.y[2][::-1], sol_out.y[2][1:]])
+        psi = np.hstack([-sol_in.y[3][::-1], sol_out.y[3][1:]])
         psi += phi[0] - psi[0]
 
         # R, phi, t, and psi
