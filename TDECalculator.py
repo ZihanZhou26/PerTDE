@@ -175,7 +175,7 @@ class TDECalculator:
         self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
         self.phidot = cp.interpolate.interp1d(tau, phidot, kind='cubic', fill_value='extrapolate')
         self.psidot = cp.interpolate.interp1d(tau, psidot, kind='cubic', fill_value='extrapolate')
-    
+     
     def _compute_orbit(self, Omegap):
         """
         Compute the orbital phase (Phi), radius (R), and their time derivatives
