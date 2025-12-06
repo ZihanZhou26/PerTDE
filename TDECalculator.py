@@ -628,6 +628,34 @@ class TDECalculator:
 
         self.LAMBDA = LAMBDA
 
+    def l_null(self, r, theta):
+        a = self.a 
+        delta = r**2 + a**2 - 2 * r
+
+        dt = (r**2 + a**2) / delta
+        dr = 1.0
+        dtheta = 0.0
+        dphi = a / delta
+
+        L = np.array([dt, dr, dtheta, dphi])
+
+        self.l_null = L
+
+    def n_null(self, r, theta):
+        a = self.a 
+        sigma = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 + a**2 - 2 * r
+
+        dt = (r**2 + a**2) / (2*sigma)
+        dr = delta / (2 * sigma)
+        dtheta = 0.0
+        dphi = a / (2*sigma)
+
+        n = np.array([dt, dr, dtheta, dphi])
+
+        self.n_null = n
+
+
     def whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
         """
         At the TDE moment, sample N_Omega random directions on the sphere,
@@ -778,6 +806,8 @@ class TDECalculator:
         self.kerr_metric(R_TDE, np.pi/2)
         self.christoffel_symb(R_TDE, np.pi/2)
         self.rel_lambda(tdot_TDE, R_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
+        self.l_null(R_TDE, np.pi/2)
+        self.n_null(R_TDE, np.pi/2)
 
         # 2. Sample random directions
         x, y, z = np.random.normal(size=(3, N_Omega))
@@ -841,6 +871,7 @@ class TDECalculator:
         Gamma_alpha_phi = C_i[:, :, 3]  
         lambda_alpha_i = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
         lambda_beta_0 = lam_i[:, 0]
+        sigma = R_TDE**2 + self.a**2 * np.cos(np.pi/2)**2
 
         # dE Calculation
         # Step 1: contraction over α
@@ -862,7 +893,13 @@ class TDECalculator:
         # Step 3: Contract with λ_0^β and g_{βγ}  
         dLz_random = np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term_phi)
 
-        
+        # dK Calculation
+        lambda_term = np.einsum()
+
+        rterm = np.einsum()
+        term_braket = np.einsum()
+
+        dK_random = 2 * np.einsum('ard,ga->rdg', X, term_braket)
 
         dT_random = np.where(
             dEnergy_random < 0,
