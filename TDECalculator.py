@@ -900,7 +900,7 @@ class TDECalculator:
         dLz_random = np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term_phi)
 
         # dK Calculation
-        lambda_term = np.einsum()
+        T = np.einsum("a,b->ab", l_lower, n_lower) * sigma
 
         rterm = np.einsum()
         term_braket = np.einsum()
