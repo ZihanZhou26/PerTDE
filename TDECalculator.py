@@ -637,9 +637,9 @@ class TDECalculator:
         dtheta = 0.0
         dphi = a / delta
 
-        L = np.array([dt, dr, dtheta, dphi])
+        lalpha = np.array([dt, dr, dtheta, dphi])
 
-        self.l_null = L
+        self.l_null = lalpha
 
     def n_null(self, r, theta):
         a = self.a 
@@ -866,10 +866,16 @@ class TDECalculator:
         g_i = self.G[:, :]         # g_{βγ}
         lam_i = self.LAMBDA[:, :]  # λ^μ_a
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
+        l_alpha = self.l_null      # l^α
+        n_alpha = self.n_null      # n^α
+
+        l_lower = np.einsum("ba,a->b", g_i, l_alpha)
+        n_lower = np.einsum("ba,a->b", g_i, n_alpha)
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
         Gamma_alpha_phi = C_i[:, :, 3]  
-        lambda_alpha_i = lam_i[:, 1:]                            # Shape (4, 3) = λ_i^α
+        lambda_alpha_i = lam_i[:, 1:]   
+        lambda_r_i = lam_i[1, 1:]                       
         lambda_beta_0 = lam_i[:, 0]
         sigma = R_TDE**2 + self.a**2 * np.cos(np.pi/2)**2
 
