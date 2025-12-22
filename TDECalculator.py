@@ -2,6 +2,8 @@ import pygyre as pg
 import numpy as np
 import scipy as cp
 from scipy import integrate
+import jax.numpy as jnp
+from jax import jacfwd
 import matplotlib.pyplot as plt
 
 
@@ -901,11 +903,21 @@ class TDECalculator:
 
         # dK Calculation
         T = np.einsum("a,b->ab", l_lower, n_lower) * sigma
+        dT = jacfwd(T, argnums=2)
 
-        rterm = np.einsum()
-        term_braket = np.einsum()
+        # term2 = Γ^μ_{α γ} T_{μ β}
+        term2 = np.einsum("mag,mb->abg", C_i, T)
+        # term3 = Γ^μ_{β γ} T_{α μ}
+        term3 = np.einsum("mbg,am->abg", C_i, T)
+        #  Full covariant derivative: ∇_γ T_{αβ}
+        nabla_T = dT - term2 - term3
+
+        bracket1 = np.einsum('a,b,gi,abg->abg', lambda_beta_0, lambda_beta_0, lambda_alpha_i, nabla_T)
+        rterm = R_TDE * lambda_r_i
+        term_braket = bracket1 - rterm
 
         dK_random = 2 * np.einsum('ard,ga->rdg', X, term_braket)
+        dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
         dT_random = np.where(
             dEnergy_random < 0,
