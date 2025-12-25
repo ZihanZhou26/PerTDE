@@ -126,6 +126,67 @@ class TDECalculator:
 
         return [dt_dτ, dr_dτ, dφ_dτ, dpsi_dτ]
     
+    def geodesic_kerr_s2(self, τ, dq, dE, dLz, y):
+        """
+        Testing new geodesic function based off of Kesden 2012.
+        """
+        t, r, phi, theta, psi = y
+
+        q = self.Carter + dq
+        E = self.OrbitEnergy + dE
+        rp = self.Rp
+        a = self.a
+        M = self.MBH
+
+        Lz = self.mom_kerr_analytic(rp, a) + dLz
+
+        sigma = r**2 + a**2 * np.cos(theta)**2
+        delta = r**2 + a**2 - 2 * M * r
+        alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)*2
+
+        dt_dτ = ((alpha * E - 2 * M * a * r * Lz) / delta) / sigma
+        dr_dτ = np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
+        dφ_dτ = (Lz * np.csc(theta)**2 + (2 * M * a * r * E - a**2 * Lz) / delta) / sigma
+        dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
+
+        dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
+
+        return [dt_dτ, dr_dτ, dφ_dτ, dθ_dτ, dpsi_dτ]
+    
+    def _compute_rel_dMdT(self, dq, dE, dLz):
+        """
+        For stage two, compute dM/dT.
+        """
+        rp = self.R_TDE
+        ε = 1e-6
+        tau_max = np.max(self.t)
+
+        y0_out = [0.0, rp + ε, 0.0, 0.0]
+        sol_in = sol_out = cp.integrate.solve_ivp(
+            self.geodesic_kerr_s2,
+            (0, tau_max),
+            dq,
+            dE,
+            dLz,
+            y0_out,
+            t_eval=self.t[self.t >= 0]
+        )   
+
+        # connect inbound and outbound leg
+        tau = np.hstack(sol_out.t[1:])
+        time = np.hstack(sol_out.y[0][1:])
+        radius = np.hstack(sol_out.y[1][1:])
+        phi = np.hstack(sol_out.y[2][1:])
+        psi = np.hstack(sol_out.y[3][1:])
+        psi += phi[0] - psi[0]
+
+        apocenter = np.max(radius)
+        tf = tau[np.where(radius == apocenter)]
+
+        dmdt = np.pi / tf
+
+        return dmdt
+    
     def _compute_rel_orbit(self):
         """
         For Kerr prograde orbits, compute the orbital phase (Phi), radius (R), and their time derivatives
@@ -353,7 +414,7 @@ class TDECalculator:
             """
             omegam = omega[indices]             # frequencies of selected modes
             Qm = self.overlap_Q[indices]  # corresponding Q overlaps
-            invomega = 1.0 / omegam
+            invomega = 1.0 / omegam\
             def G(Delta_t):
                 # Delta_t is an array of lags
                 # sinm[k,j] = sin(ωm[k] * Delta_t[j])
@@ -919,11 +980,7 @@ class TDECalculator:
         dK_random = 2 * np.einsum('ard,ga->rdg', X, term_braket)
         dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
-        dT_random = np.where(
-            dEnergy_random < 0,
-            2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
-            0
-        )
+        dT_random = _compute_rel_dMdT(dQ_random, dE_random, dLz_random)
 
         # 8. Unperturbed motion
         dist0 = np.sqrt(
