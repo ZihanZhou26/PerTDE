@@ -414,7 +414,7 @@ class TDECalculator:
             """
             omegam = omega[indices]             # frequencies of selected modes
             Qm = self.overlap_Q[indices]  # corresponding Q overlaps
-            invomega = 1.0 / omegam\
+            invomega = 1.0 / omegam
             def G(Delta_t):
                 # Delta_t is an array of lags
                 # sinm[k,j] = sin(ωm[k] * Delta_t[j])
