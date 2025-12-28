@@ -4,7 +4,6 @@ import scipy as cp
 from scipy import integrate
 import matplotlib.pyplot as plt
 
-
 class TDECalculator:
     """
     Calculates the time and radius of tidal disruption (TDE) for a star
@@ -888,7 +887,7 @@ class TDECalculator:
         self.rel_lambda(tdot_TDE, R_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
         self.l_null(R_TDE, np.pi/2)
         self.n_null(R_TDE, np.pi/2)
-        self.partials_table(R_TDE, np.pi/2)
+        self.partials_table(R_TDE)
 
         # 2. Sample random directions
         x, y, z = np.random.normal(size=(3, N_Omega))
