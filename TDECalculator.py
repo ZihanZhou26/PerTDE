@@ -946,10 +946,11 @@ class TDECalculator:
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
         l_alpha = self.l_null      # l^α
         n_alpha = self.n_null      # n^α
-        pT = self.partials_table
+        table = self.partials_table
 
         l_lower = np.einsum("ba,a->b", g_i, l_alpha)
-        n_lower = np.einsum("ba,a->b", g_i, n_alpha)
+        n_lower = np.einsum("ba,a->b", g_i, n_alpha) 
+        pT = np.einsum("mn,nij->mij", g_i, table)
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
         Gamma_alpha_phi = C_i[:, :, 3]  
