@@ -975,10 +975,11 @@ class TDECalculator:
         intermediate_phi = np.einsum('ai,ga->gi', lambda_alpha_i, Gamma_alpha_phi)
 
         # Step 2: apply to xi (generalized displacement tensor)
-        term_phi = np.einsum('i,gi->g', X, intermediate_phi)
+        term_phi = np.einsum('ikn,gi->gkn', X, intermediate_phi)
 
         # Step 3: Contract with λ_0^β and g_{βγ}  
-        dLz_random = np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term_phi)
+        lambda_0_lower = np.einsum('bg,b->g', g_i, lambda_beta_0)
+        dLz_random = np.einsum('g,gkn->kn', lambda_0_lower, term_phi)
 
         # dK Calculation
         T = np.einsum("a,b->ab", l_lower, n_lower) * sigma
@@ -999,7 +1000,7 @@ class TDECalculator:
         rterm = R_TDE * lambda_r_i
         term_braket = bracket1 - rterm
 
-        dK_random = 2 * np.einsum('ard,ga->rdg', X, term_braket)
+        dK_random = 2 * np.einsum('i,i...->...', term_braket, X)
         dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
         dT_random = self._compute_rel_dMdT(dQ_random, dEnergy_random, dLz_random)
