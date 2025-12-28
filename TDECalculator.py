@@ -976,7 +976,7 @@ class TDECalculator:
         intermediate_phi = np.einsum('ai,ga->gi', lambda_alpha_i, Gamma_alpha_phi)
 
         # Step 2: apply to xi (generalized displacement tensor)
-        term_phi = np.einsum('ard,ga->rdg', X, intermediate_phi)
+        term_phi = np.einsum('i,gi->g', X, intermediate_phi)
 
         # Step 3: Contract with λ_0^β and g_{βγ}  
         dLz_random = np.einsum('bg,b,rdg->rd', g_i, lambda_beta_0, term_phi)
@@ -991,7 +991,12 @@ class TDECalculator:
         #  Full covariant derivative: ∇_γ T_{αβ}
         nabla_T = pT - term2 - term3
 
-        bracket1 = np.einsum('a,b,gi,abg->abg', lambda_beta_0, lambda_beta_0, lambda_alpha_i, nabla_T)
+        bracket1 = np.einsum('a,b,gi,abg->i',
+                     lambda_beta_0,
+                     lambda_beta_0,
+                     lambda_alpha_i,
+                     nabla_T)
+
         rterm = R_TDE * lambda_r_i
         term_braket = bracket1 - rterm
 
