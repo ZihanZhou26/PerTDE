@@ -718,7 +718,7 @@ class TDECalculator:
         a = self.a
         delta = r**2 + a**2 - 2 * r
 
-        table = np.zeros(4,4,4)
+        table = np.zeros((4,4,4))
 
         table[1,0,0] = -(((2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((2 * r * (a**2 + r**2)) / delta)
         table[1,0,1] = -r
