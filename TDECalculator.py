@@ -157,16 +157,14 @@ class TDECalculator:
         ε = 1e-6
         tau_max = np.max(self.t)
 
-        y0_out = [0.0, rp + ε, 0.0, 0.0]
-        sol_in = sol_out = cp.integrate.solve_ivp(
+        y0_out = [0.0, rp + ε, 0.0, np.pi/2, 0.0]
+        sol_out = cp.integrate.solve_ivp(
             self.geodesic_kerr_s2,
             (0, tau_max),
-            dq,
-            dE,
-            dLz,
             y0_out,
+            args=(dq, dE, dLz),
             t_eval=self.t[self.t >= 0]
-        )   
+        )
 
         # connect inbound and outbound leg
         tau = np.hstack(sol_out.t[1:])
@@ -177,7 +175,7 @@ class TDECalculator:
         psi += phi[0] - psi[0]
 
         apocenter = np.max(radius)
-        tf = tau[np.where(radius == apocenter)]
+        tf = time[np.where(radius == apocenter)]
 
         dmdt = np.pi / tf
 
@@ -872,7 +870,7 @@ class TDECalculator:
         phidot_TDE = self.phidot_TDE
         rp = self.Rp
         a = self.a
-        E = self.E
+        E = self.OrbitEnergy
         Lz = self.mom_kerr_analytic(rp, a)
         i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
@@ -991,11 +989,7 @@ class TDECalculator:
         #  Full covariant derivative: ∇_γ T_{αβ}
         nabla_T = pT - term2 - term3
 
-        bracket1 = np.einsum('a,b,gi,abg->i',
-                     lambda_beta_0,
-                     lambda_beta_0,
-                     lambda_alpha_i,
-                     nabla_T)
+        bracket1 = np.einsum('a,b,ai,abg->i', lambda_beta_0, lambda_beta_0, lambda_alpha_i, nabla_T)
 
         rterm = R_TDE * lambda_r_i
         term_braket = bracket1 - rterm
