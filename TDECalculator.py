@@ -2,8 +2,6 @@ import pygyre as pg
 import numpy as np
 import scipy as cp
 from scipy import integrate
-import jax.numpy as jnp
-from jax import jacfwd
 import matplotlib.pyplot as plt
 
 
@@ -136,17 +134,16 @@ class TDECalculator:
         E = self.OrbitEnergy + dE
         rp = self.Rp
         a = self.a
-        M = self.MBH
 
         Lz = self.mom_kerr_analytic(rp, a) + dLz
 
         sigma = r**2 + a**2 * np.cos(theta)**2
-        delta = r**2 + a**2 - 2 * M * r
+        delta = r**2 + a**2 - 2 * r
         alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)*2
 
-        dt_dτ = ((alpha * E - 2 * M * a * r * Lz) / delta) / sigma
+        dt_dτ = ((alpha * E - 2 * a * r * Lz) / delta) / sigma
         dr_dτ = np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
-        dφ_dτ = (Lz * np.csc(theta)**2 + (2 * M * a * r * E - a**2 * Lz) / delta) / sigma
+        dφ_dτ = (Lz * np.csc(theta)**2 + (2 * a * r * E - a**2 * Lz) / delta) / sigma
         dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
 
         dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
@@ -718,6 +715,22 @@ class TDECalculator:
 
         self.n_null = n
 
+    def partials_table(self, r):
+        a = self.a
+        delta = r**2 + a**2 - 2 * r
+
+        table = np.zeros(4,4,4)
+
+        table[1,0,0] = -(((2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((2 * r * (a**2 + r**2)) / delta)
+        table[1,0,1] = -r
+        table[1,0,3] = table[1,3,0] = -(a * ((2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((a * r) / delta)
+
+        table[1,1,0] = r
+        table[1,1,1] = 0.5 * (2 - 2 * r)
+
+        table[1,3,3] = -((a**2 * (2 * r - 2))/ (2 * delta**2))
+
+        self.partials_table = table
 
     def whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
         """
@@ -858,6 +871,10 @@ class TDECalculator:
         tdot_TDE = self.tdot_TDE
         Phi_TDE = self.Phi_TDE
         phidot_TDE = self.phidot_TDE
+        rp = self.Rp
+        a = self.a
+        E = self.E
+        Lz = self.mom_kerr_analytic(rp, a)
         i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
 
@@ -871,6 +888,7 @@ class TDECalculator:
         self.rel_lambda(tdot_TDE, R_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
         self.l_null(R_TDE, np.pi/2)
         self.n_null(R_TDE, np.pi/2)
+        self.partials_table(R_TDE, np.pi/2)
 
         # 2. Sample random directions
         x, y, z = np.random.normal(size=(3, N_Omega))
@@ -931,6 +949,7 @@ class TDECalculator:
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
         l_alpha = self.l_null      # l^α
         n_alpha = self.n_null      # n^α
+        pT = self.partials_table
 
         l_lower = np.einsum("ba,a->b", g_i, l_alpha)
         n_lower = np.einsum("ba,a->b", g_i, n_alpha)
@@ -964,14 +983,13 @@ class TDECalculator:
 
         # dK Calculation
         T = np.einsum("a,b->ab", l_lower, n_lower) * sigma
-        dT = jacfwd(T, argnums=2)
 
         # term2 = Γ^μ_{α γ} T_{μ β}
         term2 = np.einsum("mag,mb->abg", C_i, T)
         # term3 = Γ^μ_{β γ} T_{α μ}
         term3 = np.einsum("mbg,am->abg", C_i, T)
         #  Full covariant derivative: ∇_γ T_{αβ}
-        nabla_T = dT - term2 - term3
+        nabla_T = pT - term2 - term3
 
         bracket1 = np.einsum('a,b,gi,abg->abg', lambda_beta_0, lambda_beta_0, lambda_alpha_i, nabla_T)
         rterm = R_TDE * lambda_r_i
@@ -980,7 +998,7 @@ class TDECalculator:
         dK_random = 2 * np.einsum('ard,ga->rdg', X, term_braket)
         dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
-        dT_random = _compute_rel_dMdT(dQ_random, dE_random, dLz_random)
+        dT_random = self._compute_rel_dMdT(dQ_random, dEnergy_random, dLz_random)
 
         # 8. Unperturbed motion
         dist0 = np.sqrt(
