@@ -138,7 +138,7 @@ class TDECalculator:
 
         sigma = r**2 + a**2 * np.cos(theta)**2
         delta = r**2 + a**2 - 2 * r
-        alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)*2
+        alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)**2
 
         dt_dτ = ((alpha * E - 2 * a * r * Lz) / delta) / sigma
         dr_dτ = np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
@@ -148,16 +148,6 @@ class TDECalculator:
         dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
 
         return [dt_dτ, dr_dτ, dφ_dτ, dθ_dτ, dpsi_dτ]
-    
-    def R_of_r(self, r):
-        a = self.a
-        rp = self.Rp
-        E = self.OrbitEnergy
-        Lz = self.mom_kerr_analytic(rp, a)
-        Q = 0.0
-        delta = r**2 - 2*r + a**2
-        return (E*(r**2 + a**2) - a*Lz)**2 - delta*(r**2 + (Lz - a*E)**2 + Q)
-
     
     def find_ra(self):
         rp = self.Rp
@@ -169,6 +159,7 @@ class TDECalculator:
             r2 *= 1.3
 
         return cp.optimize.brentq(self.R_of_r, r1, r2)
+
     
     def _compute_rel_dT(self, dq, dE, dLz):
         """
@@ -186,22 +177,6 @@ class TDECalculator:
         N = 2000
         x = np.linspace(ε, np.pi - ε, N)
         r_grid = 0.5*(ra + rp) + 0.5*(ra - rp)*np.cos(x)
-
-        delta = r_grid**2 + a**2 - 2 * r_grid
-        sigma = r_grid**2
-        radial_potential = self.R_of_r(r_grid)
-
-        dRdE = 2 * (E*(r_grid**2 + a**2) - a*Lz) *(r_grid**2 + a**2) + 2 * a * delta * (Lz - a*E)
-        dRdLz = -2 * a * (E*(r_grid**2 + a**2) - a*Lz) - 2 * delta * (Lz - a*E)
-        dRdQ = delta
-
-        integrand_E = sigma * dRdE / radial_potential**(3/2)
-        integrand_Lz = sigma * dRdLz / radial_potential**(3/2)
-        integrand_Q = sigma * dRdQ / radial_potential**(3/2)
-
-        dTdE = -np.trapz(integrand_E,  r_grid)
-        dTdLz = -np.trapz(integrand_Lz, r_grid)
-        dTdQ = -np.trapz(integrand_Q,  r_grid)
 
         dT = dTdE * dE + dTdLz * dLz + dTdQ * dq
 
