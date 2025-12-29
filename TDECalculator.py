@@ -129,12 +129,10 @@ class TDECalculator:
         """
         t, r, phi, theta, psi = y
 
-        q = self.Carter + dq
-        E = self.OrbitEnergy + dE
-        rp = self.Rp
+        q = dq
+        E = dE
         a = self.a
-
-        Lz = self.mom_kerr_analytic(rp, a) + dLz
+        Lz = dLz
 
         sigma = r**2 + a**2 * np.cos(theta)**2
         delta = r**2 + a**2 - 2 * r
@@ -149,6 +147,16 @@ class TDECalculator:
 
         return [dt_dτ, dr_dτ, dφ_dτ, dθ_dτ, dpsi_dτ]
     
+    def R_of_r(self, r):
+        a = self.a
+        rp = self.Rp
+        E = self.OrbitEnergy
+        Lz = self.mom_kerr_analytic(rp, a)
+        Q = 0.0
+        delta = r**2 - 2*r + a**2
+        
+        return (E*(r**2 + a**2) - a*Lz)**2 - delta*(r**2 + (Lz - a*E)**2 + Q)
+    
     def find_ra(self):
         rp = self.Rp
 
@@ -160,7 +168,6 @@ class TDECalculator:
 
         return cp.optimize.brentq(self.R_of_r, r1, r2)
 
-    
     def _compute_rel_dT(self, dq, dE, dLz):
         """
         For stage two, compute dT.
@@ -169,16 +176,51 @@ class TDECalculator:
         a = self.a
         Lz = self.mom_kerr_analytic(rp, a)
         E = self.OrbitEnergy
-        Q = 0.0
+        Q = self.Carter
         ε = 1e-6
+
+        # only bound orbits?
+        total_Energy = E * np.ones(dE.shape) + dE
+        total_Energy = np.where(total_Energy >= 1, np.nan, total_Energy)
+        bound_Energy = total_Energy[~np.isnan(total_Energy)]
         
+        total_Q = Q * np.ones(dq.shape) + dq
+        total_Lz = Lz * np.ones(dLz.shape) + dLz
+
+        bound_Q = total_Q[~np.isnan(total_Energy)]
+        bound_Lz = total_Lz[~np.isnan(total_Energy)]
+
+        # integration
         ra = self.find_ra()
+        rp = self.Rp
+        ε = 1e-6
+        tau_max = np.max(self.t)
 
-        N = 2000
-        x = np.linspace(ε, np.pi - ε, N)
-        r_grid = 0.5*(ra + rp) + 0.5*(ra - rp)*np.cos(x)
+        y0_out = [0.0, rp + ε, 0.0, np.pi/2, 0.0]
+        sol_out = cp.integrate.solve_ivp(
+            self.geodesic_ker_s2,
+            (0, tau_max),
+            y0_out,
+            args=(bound_Q, bound_Energy, bound_Lz),
+            t_eval=self.t[self.t >= 0]
+        )   
 
-        dT = dTdE * dE + dTdLz * dLz + dTdQ * dq
+        tau = sol_out.t
+        time = sol_out.y[0]
+        radius = sol_out.y[1]
+        phi = sol_out.y[2]
+        psi = sol_out.y[3]
+        psi += phi[0] - psi[0]
+
+        # find tf when R reaches apocenter of orbit
+        self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
+        self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
+
+        f = lambda τ: self.bound_R(τ) - ra
+        τ_ra = cp.optimize.brentq(f, tau[0], tau[-1])
+
+        tf = self.bound_obs_t(τ_ra)
+        dT = 2 * tf
 
         return dT
     
@@ -654,7 +696,7 @@ class TDECalculator:
 
         # Precompute cos(Φ) and sin(Φ)
         a = self.a 
-        q = 0.0
+        q = self.Carter
         c, s = np.cos(theta), np.sin(theta)
         Lz = self.mom_kerr_analytic(self.Rp, self.a)
         K = q + (Lz - a)**2
