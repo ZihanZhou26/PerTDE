@@ -149,37 +149,54 @@ class TDECalculator:
 
         return [dt_dτ, dr_dτ, dφ_dτ, dθ_dτ, dpsi_dτ]
     
-    def _compute_rel_dMdT(self, dq, dE, dLz):
+    def find_ra(self):
+        rp = self.Rp
+
+        r1 = rp * (1 + 1e-6)
+        r2 = r1
+
+        while self.R_of_r(r2) > 0:
+            r2 *= 1.3
+
+        return cp.optimize.brentq(self.R_of_r, r1, r2)
+    
+    def _compute_rel_dT(self, dq, dE, dLz):
         """
         For stage two, compute dM/dT.
         """
-        rp = self.R_TDE
-        ε = 1e-6
-        tau_max = np.max(self.t)
+        rdot = self.Rdot()
+        r = self.R()
+        rp = self.Rp
+        a = self.a
+        Lz = self.mom_kerr_analytic(rp)
+        E = self.OrbitEnergy
+        Q = 0.0
+        
+        ra = self.find_ra()
 
-        y0_out = [0.0, rp + ε, 0.0, np.pi/2, 0.0]
-        sol_out = cp.integrate.solve_ivp(
-            self.geodesic_kerr_s2,
-            (0, tau_max),
-            y0_out,
-            args=(dq, dE, dLz),
-            t_eval=self.t[self.t >= 0]
-        )
+        N = 2000
+        x = np.linspace(0, np.pi, N)
+        r_grid = 0.5*(ra + rp) + 0.5*(ra - rp)*np.cos(x)
 
-        # connect inbound and outbound leg
-        tau = np.hstack(sol_out.t[1:])
-        time = np.hstack(sol_out.y[0][1:])
-        radius = np.hstack(sol_out.y[1][1:])
-        phi = np.hstack(sol_out.y[2][1:])
-        psi = np.hstack(sol_out.y[3][1:])
-        psi += phi[0] - psi[0]
+        delta = r_grid**2 + a**2 - 2 * r_grid
+        sigma = r_grid**2 + a**2
+        radial_potential = (E*(r_grid**2 + a**2) - a*Lz)**2 - delta*(r_grid**2 + (Lz - a*E)**2 + Q)
 
-        apocenter = np.max(radius)
-        tf = time[np.where(radius == apocenter)]
+        dRdE = 2 * (E*(r_grid**2 + a**2) - a*Lz) *(r_grid**2 + a**2) + 2 * a * delta * (Lz - a*E)
+        dRdLz = -2 * a * (E*(r_grid**2 + a**2) - a*Lz) - 2 * delta * (Lz - a*E)
+        dRdQ = delta
 
-        dmdt = np.pi / tf
+        integrand_E = sigma * dRdE(r_grid, E, Lz, Q, a)  / radial_potential**(3/2)
+        integrand_Lz = sigma * dRdLz(r_grid, E, Lz, Q, a) / radial_potential**(3/2)
+        integrand_Q = sigma * dRdQ(r_grid) / radial_potential**(3/2)
 
-        return dmdt
+        dTdE = -np.trapz(integrand_E,  r_grid)
+        dTdLz = -np.trapz(integrand_Lz, r_grid)
+        dTdQ = -np.trapz(integrand_Q,  r_grid)
+
+        dT = dTdE * dE + dTdLz * dLz + dTdQ * dq
+
+        return dT
     
     def _compute_rel_orbit(self):
         """
@@ -998,7 +1015,7 @@ class TDECalculator:
         dK_random = 2 * np.einsum('i,i...->...', term_braket, X)
         dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
-        dT_random = self._compute_rel_dMdT(dQ_random, dEnergy_random, dLz_random)
+        dT_random = self._compute_rel_dT(dQ_random, dEnergy_random, dLz_random)
 
         # 8. Unperturbed motion
         dist0 = np.sqrt(
