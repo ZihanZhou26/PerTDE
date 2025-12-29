@@ -149,6 +149,16 @@ class TDECalculator:
 
         return [dt_dτ, dr_dτ, dφ_dτ, dθ_dτ, dpsi_dτ]
     
+    def R_of_r(self, r):
+        a = self.a
+        rp = self.Rp
+        E = self.OrbitEnergy
+        Lz = self.mom_kerr_analytic(rp, a)
+        Q = 0.0
+        delta = r**2 - 2*r + a**2
+        return (E*(r**2 + a**2) - a*Lz)**2 - delta*(r**2 + (Lz - a*E)**2 + Q)
+
+    
     def find_ra(self):
         rp = self.Rp
 
@@ -162,33 +172,32 @@ class TDECalculator:
     
     def _compute_rel_dT(self, dq, dE, dLz):
         """
-        For stage two, compute dM/dT.
+        For stage two, compute dT.
         """
-        rdot = self.Rdot()
-        r = self.R()
         rp = self.Rp
         a = self.a
-        Lz = self.mom_kerr_analytic(rp)
+        Lz = self.mom_kerr_analytic(rp, a)
         E = self.OrbitEnergy
         Q = 0.0
+        ε = 1e-6
         
         ra = self.find_ra()
 
         N = 2000
-        x = np.linspace(0, np.pi, N)
+        x = np.linspace(ε, np.pi - ε, N)
         r_grid = 0.5*(ra + rp) + 0.5*(ra - rp)*np.cos(x)
 
         delta = r_grid**2 + a**2 - 2 * r_grid
-        sigma = r_grid**2 + a**2
-        radial_potential = (E*(r_grid**2 + a**2) - a*Lz)**2 - delta*(r_grid**2 + (Lz - a*E)**2 + Q)
+        sigma = r_grid**2
+        radial_potential = self.R_of_r(r_grid)
 
         dRdE = 2 * (E*(r_grid**2 + a**2) - a*Lz) *(r_grid**2 + a**2) + 2 * a * delta * (Lz - a*E)
         dRdLz = -2 * a * (E*(r_grid**2 + a**2) - a*Lz) - 2 * delta * (Lz - a*E)
         dRdQ = delta
 
-        integrand_E = sigma * dRdE(r_grid, E, Lz, Q, a)  / radial_potential**(3/2)
-        integrand_Lz = sigma * dRdLz(r_grid, E, Lz, Q, a) / radial_potential**(3/2)
-        integrand_Q = sigma * dRdQ(r_grid) / radial_potential**(3/2)
+        integrand_E = sigma * dRdE / radial_potential**(3/2)
+        integrand_Lz = sigma * dRdLz / radial_potential**(3/2)
+        integrand_Q = sigma * dRdQ / radial_potential**(3/2)
 
         dTdE = -np.trapz(integrand_E,  r_grid)
         dTdLz = -np.trapz(integrand_Lz, r_grid)
