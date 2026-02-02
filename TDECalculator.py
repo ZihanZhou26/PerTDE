@@ -1036,6 +1036,11 @@ class TDECalculator:
         self.dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
         # dT_random = self._compute_rel_dT(dQ_random, dEnergy_random, dLz_random)
+        dT_random = np.where(
+            dEnergy_random < 0,
+            2 * np.pi / np.abs(-2 * dEnergy_random)**1.5,
+            0
+        ) 
 
         # 8. Unperturbed motion
         dist0 = np.sqrt(
