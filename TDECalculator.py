@@ -1013,7 +1013,7 @@ class TDECalculator:
         term_phi = np.einsum('ikn,gi->gkn', X, intermediate_phi)
 
         # Step 3: Contract with λ_0^β and g_{βγ}  
-        dLz_random = np.einsum('bg,b,gkn->kn', g_i, lambda_beta_0, term_phi)
+        self.dLz_random = np.einsum('bg,b,gkn->kn', g_i, lambda_beta_0, term_phi)
 
         # dK Calculation
         T = np.einsum("a,b->ab", l_alpha, n_alpha) * sigma
