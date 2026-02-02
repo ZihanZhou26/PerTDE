@@ -10,7 +10,7 @@ class FallbackGen:
     def __init__(self, a, rtde, rp, E, Lz, Q, dE, dLz, dQ):
         self.dE = dE
         self.dLz = dLz
-        self.Q = dQ
+        self.dQ = dQ
         self.a = a
         self.R_TDE = rtde
         self.Rp = rp
@@ -71,65 +71,115 @@ class FallbackGen:
 
         dE = self.dE 
         dLz = self.dLz
-        dq = self.Q
+        dq = self.dQ
         rp = self.Rp
         Lz = self.mom
         E = self.OrbitEnergy
         Q = self.Carter
         ε = 1e-6
 
-        # only bound orbits?
-        total_Energy = E * np.ones(dE.shape) + dE
-        total_Energy = np.where(total_Energy >= 1, np.nan, total_Energy)
-        
-        total_Q = Q * np.ones(dq.shape) + dq
-        total_Lz = Lz * np.ones(dLz.shape) + dLz
-
-        bound_E = total_Energy[~np.isnan(total_Energy)]
-        bound_Q = total_Q[~np.isnan(total_Energy)]
-        bound_Lz = total_Lz[~np.isnan(total_Energy)]
+        total_Energy = E + dE
+        total_Q = Q + dq
+        total_Lz = Lz + dLz
 
         # integration
         r = self.R_TDE
         tau_max = np.max(self.t)
-        dTs = np.zeros([total_Energy.size])
 
-        for i in range(total_Energy.size):
-            self.bound_E = bound_E[i]
-            self.bound_Q = bound_Q[i]
-            self.bound_Lz = bound_Lz[i]
+        self.bound_E = total_Energy
+        self.bound_Q = total_Q
+        self.bound_Lz = total_Lz
 
-            y0_out = [0.0, r, 0.0, 0.0]
-            sol_out = cp.integrate.solve_ivp(
-                self.geodesic_kerr_s2,
-                (0, tau_max),
-                y0_out,
-                t_eval=self.t[self.t >= 0]
-            )   
+        y0_out = [0.0, r, 0.0, 0.0]
+        sol_out = cp.integrate.solve_ivp(
+            self.geodesic_kerr_s2,
+            (0, tau_max),
+            y0_out,
+            t_eval=self.t[self.t >= 0]
+        )   
 
-            tau = sol_out.t
-            time = sol_out.y[0]
-            radius = sol_out.y[1]
+        tau = sol_out.t
+        time = sol_out.y[0]
+        radius = sol_out.y[1]
 
-            # find tf when R reaches apocenter of orbit
-            self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
-            self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
+        # find tf when R reaches apocenter of orbit
+        self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
+        self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
 
-            ra = self.find_ra()
+        ra = self.find_ra()
 
-            fp = lambda τ: self.bound_R(τ) - rp
-            τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
+        fp = lambda τ: self.bound_R(τ) - rp
+        τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
 
-            fa = lambda τ: self.bound_R(τ) - ra
-            τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
+        fa = lambda τ: self.bound_R(τ) - ra
+        τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
 
-            tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
-            dT = 2 * tf
+        tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
+        self.dT = 2 * tf
 
-            dTs.append(dT)
+        # only bound orbits?
+        # total_Energy = E * np.ones(dE.shape) + dE
+        # total_Energy = np.where(total_Energy >= 1, np.nan, total_Energy)
+        # total_Q = Q * np.ones(dq.shape) + dq
+        # total_Lz = Lz * np.ones(dLz.shape) + dLz
 
-        self.dTs = dTs
+        # bound_E = total_Energy[~np.isnan(total_Energy)]
+        # bound_Q = total_Q[~np.isnan(total_Energy)]
+        # bound_Lz = total_Lz[~np.isnan(total_Energy)]
     
-    def to_text(self):
-        # take dTs and write file
-        pass
+        # for i in range(total_Energy.size):
+        #     self.bound_E = bound_E[i]
+        #     self.bound_Q = bound_Q[i]
+        #     self.bound_Lz = bound_Lz[i]
+
+        #     y0_out = [0.0, r, 0.0, 0.0]
+        #     sol_out = cp.integrate.solve_ivp(
+        #         self.geodesic_kerr_s2,
+        #         (0, tau_max),
+        #         y0_out,
+        #         t_eval=self.t[self.t >= 0]
+        #     )   
+
+        #     tau = sol_out.t
+        #     time = sol_out.y[0]
+        #     radius = sol_out.y[1]
+
+        #     # find tf when R reaches apocenter of orbit
+        #     self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
+        #     self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
+
+        #     ra = self.find_ra()
+
+        #     fp = lambda τ: self.bound_R(τ) - rp
+        #     τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
+
+        #     fa = lambda τ: self.bound_R(τ) - ra
+        #     τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
+
+        #     tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
+        #     dT = 2 * tf
+
+        #     dTs.append(dT)
+
+        # self.dTs = dTs
+    
+    # def to_text(self):
+    #     # take dTs and write file
+    #     dE = self.dE 
+    #     dLz = self.dLz 
+    #     dQ = self.dQ
+    #     dT = self.dT
+
+    #     data = np.zeros(len(dE), dtype=[
+    #         ("dE", "f8"),
+    #         ("dLz", "f8"),
+    #         ("dQ", "f8"),
+    #         ("dT", "f8")
+    #     ])
+
+    #     data["dE"] = dE
+    #     data[""] = dLz
+    #     data["mass"] = dQ
+    #     data["radius"] = dT
+
+    #     np.save("mydata.npy", data)
