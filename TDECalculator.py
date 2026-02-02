@@ -127,12 +127,13 @@ class TDECalculator:
         """
         Testing new geodesic function based off of Kesden 2012.
         """
-        t, r, phi, theta, psi = y
+        t, r, phi, psi = y
 
         q = dq
         E = dE
         a = self.a
         Lz = dLz
+        theta = np.pi / 2
 
         sigma = r**2 + a**2 * np.cos(theta)**2
         delta = r**2 + a**2 - 2 * r
@@ -140,12 +141,11 @@ class TDECalculator:
 
         dt_dτ = ((alpha * E - 2 * a * r * Lz) / delta) / sigma
         dr_dτ = np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
-        dφ_dτ = (Lz * np.csc(theta)**2 + (2 * a * r * E - a**2 * Lz) / delta) / sigma
-        dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
+        # dφ_dτ = (Lz * np.csc(theta)**2 + (2 * a * r * E - a**2 * Lz) / delta) / sigma
+        # dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
+        # dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
 
-        dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
-
-        return [dt_dτ, dr_dτ, dφ_dτ, dθ_dτ, dpsi_dτ]
+        return [dt_dτ, dr_dτ]
     
     def R_of_r(self, r):
         a = self.a
@@ -192,13 +192,13 @@ class TDECalculator:
 
         # integration
         ra = self.find_ra()
-        rp = self.Rp
+        r = self.R_TDE
         ε = 1e-6
         tau_max = np.max(self.t)
 
-        y0_out = [0.0, rp + ε, 0.0, np.pi/2, 0.0]
+        y0_out = [0.0, r + ε, 0.0, 0.0]
         sol_out = cp.integrate.solve_ivp(
-            self.geodesic_ker_s2,
+            self.geodesic_kerr_s2,
             (0, tau_max),
             y0_out,
             args=(bound_Q, bound_Energy, bound_Lz),
@@ -208,9 +208,6 @@ class TDECalculator:
         tau = sol_out.t
         time = sol_out.y[0]
         radius = sol_out.y[1]
-        phi = sol_out.y[2]
-        psi = sol_out.y[3]
-        psi += phi[0] - psi[0]
 
         # find tf when R reaches apocenter of orbit
         self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
@@ -737,7 +734,7 @@ class TDECalculator:
         dtheta = 0.0
         dphi = a / delta
 
-        lalpha = np.array([dt, dr, dtheta, dphi])
+        lalpha = np.array([dt, dr, dtheta, dphi]) #l
 
         self.l_null = lalpha
 
@@ -747,11 +744,11 @@ class TDECalculator:
         delta = r**2 + a**2 - 2 * r
 
         dt = (r**2 + a**2) / (2*sigma)
-        dr = delta / (2 * sigma)
+        dr = -delta / (2 * sigma)
         dtheta = 0.0
         dphi = a / (2*sigma)
 
-        n = np.array([dt, dr, dtheta, dphi])
+        n = np.array([dt, dr, dtheta, dphi]) #n
 
         self.n_null = n
 
@@ -761,9 +758,9 @@ class TDECalculator:
 
         table = np.zeros((4,4,4))
 
-        table[1,0,0] = -(((2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((2 * r * (a**2 + r**2)) / delta)
+        table[1,0,0] = -(((-2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((2 * r * (a**2 + r**2)) / delta)
         table[1,0,1] = -r
-        table[1,0,3] = table[1,3,0] = -(a * ((2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((a * r) / delta)
+        table[1,0,3] = table[1,3,0] = -(a * ((-2 + 2 * r) * (a**2 + r**2)**2) / (2 * delta**2)) + ((a * r) / delta)
 
         table[1,1,0] = r
         table[1,1,1] = 0.5 * (2 - 2 * r)
@@ -991,10 +988,6 @@ class TDECalculator:
         n_alpha = self.n_null      # n^α
         table = self.partials_table
 
-        l_lower = np.einsum("ba,a->b", g_i, l_alpha)
-        n_lower = np.einsum("ba,a->b", g_i, n_alpha) 
-        pT = np.einsum("mn,nij->mij", g_i, table)
-
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
         Gamma_alpha_phi = C_i[:, :, 3]  
         lambda_alpha_i = lam_i[:, 1:]   
@@ -1020,28 +1013,29 @@ class TDECalculator:
         term_phi = np.einsum('ikn,gi->gkn', X, intermediate_phi)
 
         # Step 3: Contract with λ_0^β and g_{βγ}  
-        lambda_0_lower = np.einsum('bg,b->g', g_i, lambda_beta_0)
-        dLz_random = np.einsum('g,gkn->kn', lambda_0_lower, term_phi)
+        dLz_random = np.einsum('bg,b,gkn->kn', g_i, lambda_beta_0, term_phi)
 
         # dK Calculation
-        T = np.einsum("a,b->ab", l_lower, n_lower) * sigma
+        T = np.einsum("a,b->ab", l_alpha, n_alpha) * sigma
 
-        # term2 = Γ^μ_{α γ} T_{μ β}
-        term2 = np.einsum("mag,mb->abg", C_i, T)
-        # term3 = Γ^μ_{β γ} T_{α μ}
-        term3 = np.einsum("mbg,am->abg", C_i, T)
-        #  Full covariant derivative: ∇_γ T_{αβ}
-        nabla_T = pT - term2 - term3
+        # term2 = Γ^α_{γ μ} T^{μ β}
+        term2 = np.einsum("agm,mb->gab", C_i, T)
+        # term3 = Γ^β_{γ μ} T^{α μ}
+        term3 = np.einsum("bgm,am->gab", C_i, T)
+        #  Full covariant derivative: ∇_γ T^{αβ}
+        nabla_T = table + term2 + term3
+        # lower upper indices: g_αμ g_βn ∇_γ T^{μn} = ∇_γ T_{αβ}
+        nabla_T_lower = np.einsum("am,bn,gmn->gab", g_i, g_i, nabla_T)
 
-        bracket1 = np.einsum('a,b,ai,abg->i', lambda_beta_0, lambda_beta_0, lambda_alpha_i, nabla_T)
+        bracket1 = np.einsum('a,b,gi,gab->i', lambda_beta_0, lambda_beta_0, lambda_alpha_i, nabla_T_lower)
 
         rterm = R_TDE * lambda_r_i
         term_braket = bracket1 - rterm
 
-        dK_random = 2 * np.einsum('i,i...->...', term_braket, X)
-        dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
+        self.dK_random = dK_random = 2 * np.einsum('i,ikn->kn', term_braket, X)
+        self.dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
-        dT_random = self._compute_rel_dT(dQ_random, dEnergy_random, dLz_random)
+        # dT_random = self._compute_rel_dT(dQ_random, dEnergy_random, dLz_random)
 
         # 8. Unperturbed motion
         dist0 = np.sqrt(
