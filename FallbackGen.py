@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 class FallbackGen:
     "Does dT calculation offline"
 
-    def __init__(self, a, rtde, rp, E, Lz, Q, dE, dLz, dQ):
+    def __init__(self, mass_ratio, a, rtde, rp, E, Lz, Q, dE, dLz, dQ, N):
         self.dE = dE
         self.dLz = dLz
         self.dQ = dQ
@@ -17,6 +17,13 @@ class FallbackGen:
         self.OrbitEnergy = E
         self.mom = Lz
         self.Carter = Q
+        self.mass_ratio = mass_ratio
+        self.N = N
+
+        Omegap = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
+        t_ini  = self.N * (0.012 / Omegap)
+        self.t = np.linspace(-t_ini, t_ini, self.N)
+        self.obs_t = np.zeros(len(self.t))
 
         self._compute_rel_dT()
 
