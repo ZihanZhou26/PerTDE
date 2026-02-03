@@ -19,6 +19,7 @@ class FallbackGen:
         self.Carter = Q
         self.mass_ratio = mass_ratio
         self.N = N
+        self.radial_sign = -1
 
         Omegap = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
         t_ini  = self.N * (0.012 / Omegap)
@@ -31,7 +32,7 @@ class FallbackGen:
         """
         Testing new geodesic function based off of Kesden 2012.
         """
-        t, r, phi, psi = y
+        t, r = y
 
         q = self.bound_Q
         E = self.bound_E
@@ -43,8 +44,14 @@ class FallbackGen:
         delta = r**2 + a**2 - 2 * r
         alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)**2
 
+        rad = (E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)
+        rad = max(rad, 0)
+        
+        if rad < 1e-12:
+            self.radial_sign *= -1
+
         dt_dτ = ((alpha * E - 2 * a * r * Lz) / delta) / sigma
-        dr_dτ = np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
+        dr_dτ = self.radial_sign * np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
         # dφ_dτ = (Lz * np.csc(theta)**2 + (2 * a * r * E - a**2 * Lz) / delta) / sigma
         # dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
         # dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
@@ -97,7 +104,7 @@ class FallbackGen:
         self.bound_Q = total_Q
         self.bound_Lz = total_Lz
 
-        y0_out = [0.0, r, 0.0, 0.0]
+        y0_out = [0, r + ε]
         sol_out = cp.integrate.solve_ivp(
             self.geodesic_kerr_s2,
             (0, tau_max),
@@ -113,16 +120,17 @@ class FallbackGen:
         self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
         self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
 
-        ra = self.find_ra()
+        if total_Energy < 1: #bound orbits dT calculation
+            ra = self.find_ra()
 
-        fp = lambda τ: self.bound_R(τ) - rp
-        τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
+            fp = lambda τ: self.bound_R(τ) - rp
+            τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
 
-        fa = lambda τ: self.bound_R(τ) - ra
-        τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
+            fa = lambda τ: self.bound_R(τ) - ra
+            τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
 
-        tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
-        self.dT = 2 * tf
+            tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
+            self.dT = 2 * tf
 
         # only bound orbits?
         # total_Energy = E * np.ones(dE.shape) + dE
