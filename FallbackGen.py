@@ -120,18 +120,18 @@ class FallbackGen:
         self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
         self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
 
-        # if total_Energy < 1 and total_Lz > Lz: 
-        # #bound orbits dT calculation, assume Lz from TDECalculator of crit Lz for marginally bound equatorial orbit
-        #     ra = self.find_ra()
+        if total_Energy < 1 and total_Lz > Lz: 
+        #bound orbits dT calculation, assume Lz from TDECalculator of crit Lz for marginally bound equatorial orbit
+            ra = self.find_ra()
 
-        #     fp = lambda τ: self.bound_R(τ) - rp
-        #     τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
+            fp = lambda τ: self.bound_R(τ) - rp
+            τ_rp = cp.optimize.brentq(fp, tau[0], tau[-1])
 
-        #     fa = lambda τ: self.bound_R(τ) - ra
-        #     τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
+            fa = lambda τ: self.bound_R(τ) - ra
+            τ_ra = cp.optimize.brentq(fa, tau[0], tau[-1])
 
-        #     tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
-        #     self.dT = 2 * tf
+            tf = self.bound_obs_t(τ_ra) - self.bound_obs_t(τ_rp)
+            self.dT = 2 * tf
 
         # only bound orbits?
         # total_Energy = E * np.ones(dE.shape) + dE
