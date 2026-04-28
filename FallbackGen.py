@@ -31,7 +31,7 @@ class FallbackGen:
         self.obs_t = np.zeros(len(self.t))
 
         self.N_QUAD = 96  # Gauss-Legendre quadrature points
-        self.chunk_size = 1_500_000
+        self.chunk_size = 500_000
         # Pre-compute Gauss-Legendre nodes/weights on [0, pi] once
         x_gl, w_gl        = np.polynomial.legendre.leggauss(self.N_QUAD)
         self._chi_nodes   = 0.5 * np.pi * (1.0 + x_gl)   # (N_QUAD,)
