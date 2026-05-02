@@ -30,12 +30,10 @@ class FallbackGen:
         self.t = np.linspace(-t_ini, t_ini, self.N)
         self.obs_t = np.zeros(len(self.t))
 
-        self.N_QUAD = 96  # Gauss-Legendre quadrature points
-        self.chunk_size = 500_000
-        # Pre-compute Gauss-Legendre nodes/weights on [0, pi] once
-        x_gl, w_gl        = np.polynomial.legendre.leggauss(self.N_QUAD)
-        self._chi_nodes   = 0.5 * np.pi * (1.0 + x_gl)   # (N_QUAD,)
-        self._chi_weights = 0.5 * np.pi * w_gl            # (N_QUAD,)
+        # gauss - chebyshev
+        k_gc = np.arange(1, self.N_QUAD + 1)
+        self._chi_nodes_gc = np.cos((2*k_gc - 1) * np.pi / (2 * self.N_QUAD))  # in [-1,1]
+        self._chi_weights_gc = np.full(self.N_QUAD, np.pi / self.N_QUAD)
 
         self._compute_dT()
 
@@ -151,8 +149,11 @@ class FallbackGen:
         with np.errstate(divide='ignore', invalid='ignore'):
             k_sq = np.where((d13 > 0) & (d24 > 0),
                             (r1 - r2) * (r3 - r4) / (d13 * d24), np.nan)
-        ok  = np.isfinite(k_sq) & (k_sq > 0.0) & (k_sq < 1.0)
-        K_r = np.where(ok, ellipk(np.clip(k_sq, 0.0, 1.0 - 1e-12)), np.nan)
+        
+        # protect against divergence issue
+        ok = np.isfinite(k_sq) & (k_sq > 0.0) & (k_sq < 1.0 - 1e-14)
+        
+        K_r = np.where(ok, ellipk(np.clip(k_sq, 0.0, 1.0 - 1e-14)), np.nan)
         with np.errstate(invalid='ignore'):
             Ups = np.pi * np.sqrt(np.abs((1.0 - E**2) * d13 * d24)) / (2.0 * K_r)
             Lr  = 2.0 * np.pi / Ups
@@ -164,12 +165,13 @@ class FallbackGen:
     # ------------------------------------------------------------------
 
     def _avg_Tr(self, E, Lz, Q, r1, r2, Lambda_r):
-        a   = self.a
-        chi = self._chi_nodes;  w = self._chi_weights
+        a  = self.a
+        x  = self._chi_nodes_gc    # Chebyshev nodes on [-1, 1]
+        w  = self._chi_weights_gc
 
         mid  = 0.5 * (r1 + r2)
         half = 0.5 * (r1 - r2)
-        r_q  = mid[:, None] + half[:, None] * np.cos(chi)[None, :]
+        r_q  = mid[:, None] + half[:, None] * x[None, :]
 
         E_  = E[:, None];  Lz_ = Lz[:, None];  Q_ = Q[:, None]
 
@@ -181,8 +183,13 @@ class FallbackGen:
         R_r = ((((c4 * r_q + c3) * r_q + c2) * r_q + c1) * r_q + c0)
         R_r = np.maximum(R_r, 0.0)
 
-        integ = half[:, None] * np.sin(chi)[None, :] * T_r / np.sqrt(R_r + 1e-300)
-        return 2.0 * np.einsum('iq,q->i', integ, w) / Lambda_r
+        # Chebyshev absorbs the sqrt(1-x^2) weight, so divide it out from R
+        # R(r) = c4*(r-r1)(r-r2)(r-r3)(r-r4), near turning points ~ half^2*(1-x^2)
+        # The weight sqrt(1-x^2) cancels the endpoint singularity exactly
+        sqrt_R_normalized = np.sqrt(R_r / (half[:, None]**2 * (1.0 - x**2) + 1e-300))
+
+        integ = T_r / (sqrt_R_normalized + 1e-300)
+        return 2.0 * half[:, None[0]] * np.einsum('iq,q->i', integ, w) / Lambda_r
 
     # ------------------------------------------------------------------
     # <T_theta>_lambda  (Fujita Eq. 7, polar term)
@@ -198,7 +205,7 @@ class FallbackGen:
 
         result = np.full(E.shape, np.nan)
 
-        eq  = np.abs(Q) < 1e-12 * (1.0 + np.abs(E))
+        eq = np.abs(Q) < 1e-14 * (1.0 + np.abs(E) + np.abs(Lz))
         result[eq] = -a**2 * E[eq]
 
         inc = ~eq & (Q > 0.0)
@@ -265,6 +272,12 @@ class FallbackGen:
         valid = np.isfinite(r1) & np.isfinite(r2) & (r2 > 0.0)
         print(f"  Bound: {(E_flat < 1.0).sum():,} / {N_total:,}")
         print(f"  Valid roots: {valid.sum():,}")
+
+        # In _compute_dT, after root finding:
+        separatrix = valid & ((r2 - r3) < 1e-6 * r2)
+        if separatrix.sum() > 0:
+            print(f"  Warning: {separatrix.sum()} particles near separatrix (r2≈r3)")
+            valid &= ~separatrix  # exclude — T_r is genuinely infinite here
 
         # ---- 2: Lambda_r ----
         Lambda_r = np.full(N_total, np.nan)
