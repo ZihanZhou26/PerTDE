@@ -31,6 +31,9 @@ class FallbackGen:
         self.obs_t = np.zeros(len(self.t))
 
         # gauss - chebyshev
+        self.N_QUAD = 96 
+        self.chunk_size = 500_000
+        
         k_gc = np.arange(1, self.N_QUAD + 1)
         self._chi_nodes_gc = np.cos((2*k_gc - 1) * np.pi / (2 * self.N_QUAD))  # in [-1,1]
         self._chi_weights_gc = np.full(self.N_QUAD, np.pi / self.N_QUAD)
