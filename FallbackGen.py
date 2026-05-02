@@ -33,7 +33,7 @@ class FallbackGen:
         # gauss - chebyshev
         self.N_QUAD = 96 
         self.chunk_size = 500_000
-        
+
         k_gc = np.arange(1, self.N_QUAD + 1)
         self._chi_nodes_gc = np.cos((2*k_gc - 1) * np.pi / (2 * self.N_QUAD))  # in [-1,1]
         self._chi_weights_gc = np.full(self.N_QUAD, np.pi / self.N_QUAD)
@@ -192,7 +192,7 @@ class FallbackGen:
         sqrt_R_normalized = np.sqrt(R_r / (half[:, None]**2 * (1.0 - x**2) + 1e-300))
 
         integ = T_r / (sqrt_R_normalized + 1e-300)
-        return 2.0 * half[:, None[0]] * np.einsum('iq,q->i', integ, w) / Lambda_r
+        return 2.0 * half * np.einsum('iq,q->i', integ, w) / Lambda_r
 
     # ------------------------------------------------------------------
     # <T_theta>_lambda  (Fujita Eq. 7, polar term)
