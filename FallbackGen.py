@@ -30,22 +30,19 @@ class FallbackGen:
         self.t = np.linspace(-t_ini, t_ini, self.N)
         self.obs_t = np.zeros(len(self.t))
 
-        self.N_QUAD = 96 
-        self.chunk_size = 500_000
+        self.N_QUAD = 96
+        self.chunk_size = 50_000
 
-        # Gauss-Legendre for polar integral (no endpoint singularity)
+        # Gauss-Legendre nodes for both radial and polar integrals.
+        # The cosine substitution (Eq. 2.26) makes the T_r integrand smooth
+        # on [0, pi], so GL is appropriate for both.
         x_gl, w_gl = np.polynomial.legendre.leggauss(self.N_QUAD)
-        self._chi_nodes   = 0.5 * np.pi * (1.0 + x_gl)
+        self._chi_nodes   = 0.5 * np.pi * (1.0 + x_gl)   # (N_QUAD,) on [0, pi]
         self._chi_weights = 0.5 * np.pi * w_gl
-
-        # gauss - chebyshev
-        k_gc = np.arange(1, self.N_QUAD + 1)
-        self._chi_nodes_gc = np.cos((2*k_gc - 1) * np.pi / (2 * self.N_QUAD))  # in [-1,1]
-        self._chi_weights_gc = np.full(self.N_QUAD, np.pi / self.N_QUAD)
 
         self._compute_dT()
 
-    def geodesic_kerr_s2(self, τ,  y):
+    def geodesic_kerr_s2(self, τ, y):
         """
         Testing new geodesic function based off of Kesden 2012.
         """
@@ -61,18 +58,15 @@ class FallbackGen:
         alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)**2
 
         rad = self.R_of_r(r)
-        
+
         if rad <= 0:
             self.radial_sign *= -1
 
         dt_dτ = ((alpha * E - 2 * a * r * Lz) / delta) / sigma
         dr_dτ = self.radial_sign * np.sqrt(rad) / sigma
-        # dφ_dτ = (Lz * np.csc(theta)**2 + (2 * a * r * E - a**2 * Lz) / delta) / sigma
-        # dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
-        # dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
 
         return [dt_dτ, dr_dτ]
-    
+
     def _R_coeffs(self, E, Lz, Q):
         a   = self.a
         aE  = a * E
@@ -84,181 +78,115 @@ class FallbackGen:
         c0  =  (E * a**2 - aLz)**2 - a**2 * ((Lz - aE)**2 + Q)
         return c4, c3, c2, c1, c0
 
-    # ------------------------------------------------------------------
-    # Root-finding via batched companion matrix
-    #
-    # The companion matrix of a monic degree-4 poly p(r)/c4 is:
-    #
-    #   C = [[ 0,  0,  0, -c0/c4 ],
-    #        [ 1,  0,  0, -c1/c4 ],
-    #        [ 0,  1,  0, -c2/c4 ],
-    #        [ 0,  0,  1, -c3/c4 ]]
-    #
-    # np.linalg.eigvals accepts a stack of matrices (..., 4, 4) and
-    # returns all eigenvalues in one LAPACK call — much faster than
-    # looping np.roots() over each particle.
-    # ------------------------------------------------------------------
-
     def _four_roots_batched(self, E_flat, Lz_flat, Q_flat):
         """
         Returns shape (N, 4) sorted descending (r1 > r2 > r3 > r4).
         Unbound (E >= 1) or invalid rows are NaN.
+        Chunked to avoid peak memory from large batched eigensolver.
         """
         N   = E_flat.size
         c4, c3, c2, c1, c0 = self._R_coeffs(E_flat, Lz_flat, Q_flat)
 
-        # Only process bound particles
-        bound = E_flat < 1.0
-        n_b   = bound.sum()
+        bound = (E_flat < 1.0) 
         roots_out = np.full((N, 4), np.nan)
-
-        if n_b == 0:
+        if not bound.sum():
             return roots_out
 
-        # Monic coefficients for bound particles
-        c4b = c4[bound];  c3b = c3[bound]
-        c2b = c2[bound];  c1b = c1[bound];  c0b = c0[bound]
+        c4b = c4[bound]; c3b = c3[bound]
+        c2b = c2[bound]; c1b = c1[bound]; c0b = c0[bound]
+        n_b = bound.sum()
 
-        # Build stacked companion matrices: shape (n_b, 4, 4)
-        C = np.zeros((n_b, 4, 4))
-        C[:, 1, 0] = 1.0
-        C[:, 2, 1] = 1.0
-        C[:, 3, 2] = 1.0
-        C[:, 0, 3] = -c0b / c4b
-        C[:, 1, 3] = -c1b / c4b
-        C[:, 2, 3] = -c2b / c4b
-        C[:, 3, 3] = -c3b / c4b
+        chunk = 5_000
+        real_roots_all = np.full((n_b, 4), np.nan)
 
-        # Batch eigenvalue solve — returns (n_b, 4) complex eigenvalues
-        eigs = np.linalg.eigvals(C)   # single LAPACK call
+        for start in range(0, n_b, chunk):
+            sl = slice(start, start + chunk)
+            nc = c4b[sl].size
 
-        # Keep real roots
-        real_mask = np.abs(eigs.imag) < 1e-6 * (np.abs(eigs.real) + 1.0)
-        real_roots = np.where(real_mask, eigs.real, np.nan)
+            C = np.zeros((nc, 4, 4))
+            C[:, 1, 0] = 1.0
+            C[:, 2, 1] = 1.0
+            C[:, 3, 2] = 1.0
+            C[:, 0, 3] = -c0b[sl] / c4b[sl]
+            C[:, 1, 3] = -c1b[sl] / c4b[sl]
+            C[:, 2, 3] = -c2b[sl] / c4b[sl]
+            C[:, 3, 3] = -c3b[sl] / c4b[sl]
 
-        # Sort descending (NaN sorts to end in np.sort by default for float)
-        real_roots = -np.sort(-real_roots, axis=1)   # descending
+            eigs = np.linalg.eigvals(C)
+            real_mask  = np.abs(eigs.imag) < 1e-6 * (np.abs(eigs.real) + 1.0)
+            real_roots = np.where(real_mask, eigs.real, np.nan)
+            real_roots = -np.sort(-real_roots, axis=1)
 
-        # Validate: need 4 real roots and r2 (pericenter) > 0
-        n_real = real_mask.sum(axis=1)               # (n_b,)
-        r2_col = real_roots[:, 1]
-        valid  = (n_real == 4) & (r2_col > 0.0)
+            n_real = real_mask.sum(axis=1)
+            r2_col = real_roots[:, 1]
 
-        roots_out[bound] = np.where(valid[:, None], real_roots, np.nan)
+            # r_horizon for Kerr
+            r_horizon = 1.0 + np.sqrt(1.0 - self.a**2)
+            valid = (n_real == 4) & (r2_col > r_horizon)
+            # valid  = (n_real == 4) & (r2_col > 0.0)
+            real_roots_all[sl] = np.where(valid[:, None], real_roots, np.nan)
+
+            pct = min(100, int((start + chunk) / n_b * 100))
+            print(f"  roots chunk {start//chunk + 1}/{(n_b+chunk-1)//chunk} ({pct}%)", end='\r')
+
+        print()
+        roots_out[bound] = real_roots_all
         return roots_out
-
-    # ------------------------------------------------------------------
-    # Lambda_r: Mino-time radial period  (Fujita Eq. 15)
-    # k_r^2 = (r1-r2)(r3-r4) / [(r1-r3)(r2-r4)]
-    # ------------------------------------------------------------------
 
     def _Lambda_r(self, E, r1, r2, r3, r4):
         d13 = r1 - r3;  d24 = r2 - r4
         with np.errstate(divide='ignore', invalid='ignore'):
             k_sq = np.where((d13 > 0) & (d24 > 0),
                             (r1 - r2) * (r3 - r4) / (d13 * d24), np.nan)
-        
-        # protect against divergence issue
-        ok = np.isfinite(k_sq) & (k_sq > 0.0) & (k_sq < 1.0 - 1e-14)
-        
+
+        ok  = np.isfinite(k_sq) & (k_sq > 0.0) & (k_sq < 1.0 - 1e-14)
         K_r = np.where(ok, ellipk(np.clip(k_sq, 0.0, 1.0 - 1e-14)), np.nan)
         with np.errstate(invalid='ignore'):
             Ups = np.pi * np.sqrt(np.abs((1.0 - E**2) * d13 * d24)) / (2.0 * K_r)
             Lr  = 2.0 * np.pi / Ups
         return np.where(np.isfinite(Lr) & (Lr > 0), Lr, np.nan)
 
-    # ------------------------------------------------------------------
-    # <T_r>_lambda  (Fujita Eq. 7, radial term)
-    # Cosine substitution: r = mid + half*cos(chi), chi in [0, pi]
-    # ------------------------------------------------------------------
+    def _avg_Tr(self, E, Lz, Q, r1, r2, r3, r4, Lambda_r):
+        """
+        <T_r> via cosine substitution (Eq. 2.26-2.27):
+            r(chi) = 0.5*(r1+r2) + 0.5*(r1-r2)*cos(chi),  chi in [0, pi]
 
-    def _avg_Tr(self, E, Lz, Q, r1, r2, Lambda_r):
-        a  = self.a
-        x  = self._chi_nodes_gc    # Chebyshev nodes on [-1, 1]
-        w  = self._chi_weights_gc
+        dr/dchi = -half*sin(chi)
+        sqrt(R) = |half|*sin(chi)*sqrt(-c4*(r-r3)*(r-r4))
 
-        mid  = 0.5 * (r1 + r2)
-        half = 0.5 * (r1 - r2)
-        r_q  = mid[:, None] + half[:, None] * x[None, :]
-
-        E_  = E[:, None];  Lz_ = Lz[:, None];  Q_ = Q[:, None]
-
-        P_r     = E_ * (r_q**2 + a**2) - a * Lz_
-        Delta_r = r_q**2 - 2.0 * r_q + a**2
-        T_r     = (r_q**2 + a**2) * P_r / Delta_r
-
-        c4, c3, c2, c1, c0 = self._R_coeffs(E_, Lz_, Q_)
-        R_r = ((((c4 * r_q + c3) * r_q + c2) * r_q + c1) * r_q + c0)
-        R_r = np.maximum(R_r, 0.0)
-
-        # Chebyshev absorbs the sqrt(1-x^2) weight, so divide it out from R
-        # R(r) = c4*(r-r1)(r-r2)(r-r3)(r-r4), near turning points ~ half^2*(1-x^2)
-        # The weight sqrt(1-x^2) cancels the endpoint singularity exactly
-        sqrt_R_normalized = np.sqrt(R_r / (half[:, None]**2 * (1.0 - x**2) + 1e-300))
-
-        integ = T_r / (sqrt_R_normalized + 1e-300)
-        return 2.0 * half * np.einsum('iq,q->i', integ, w) / Lambda_r
-
-    # ------------------------------------------------------------------
-    # <T_theta>_lambda  (Fujita Eq. 7, polar term)
-    # For Q ~ 0: returns -a^2 * E exactly
-    # For Q > 0: integrates over polar turning points
-    # T_theta(u) = -a^2 E (1 - u^2),  Theta(u) = Q - B u^2 + A u^4
-    # A = a^2(1-E^2),  B = Q + A + Lz^2
-    # ------------------------------------------------------------------
-
-    def _avg_Ttheta(self, E, Lz, Q):
+        The sin(chi) and |half| cancel between dr/dchi and sqrt(R), giving
+        a smooth integrand T_r / sqrt(-c4*(r-r3)*(r-r4)) on [0, pi].
+        The factor of 2 accounts for the full radial period (rp->ra->rp),
+        since the cosine substitution covers only one half (rp->ra).
+        GL quadrature is appropriate for the smooth integrand.
+        """
         a   = self.a
-        chi = self._chi_nodes;  w = self._chi_weights
+        chi = self._chi_nodes    # (N_QUAD,) GL nodes on [0, pi]
+        w   = self._chi_weights  # (N_QUAD,) GL weights
 
-        result = np.full(E.shape, np.nan)
+        # r(chi): shape (N, N_QUAD)
+        mid  = 0.5 * (r1 + r2)                               # (N,)
+        half = 0.5 * (r1 - r2)                               # (N,)
+        r_q  = mid[:, None] + half[:, None] * np.cos(chi)    # (N, N_QUAD)
 
-        eq = np.abs(Q) < 1e-14 * (1.0 + np.abs(E) + np.abs(Lz))
-        result[eq] = -a**2 * E[eq]
+        # T_r(r) = (r^2 + a^2) * P / Delta,  P = E*(r^2+a^2) - a*Lz
+        E_  = E[:, None];  Lz_ = Lz[:, None]
+        P       = E_ * (r_q**2 + a**2) - a * Lz_
+        Delta   = np.maximum(r_q**2 - 2.0*r_q + a**2, 1e-300)
+        T_r_val = (r_q**2 + a**2) * P / Delta                # (N, N_QUAD)
 
-        inc = ~eq & (Q > 0.0)
-        if not np.any(inc):
-            result[~eq] = -a**2 * E[~eq]
-            return result
+        # After cancellation of |half|*sin(chi), the integrand is:
+        # T_r / sqrt(-c4*(r-r3)*(r-r4))
+        c4   = E**2 - 1.0                                     # (N,) negative
+        r_r3 = r_q - r3[:, None]
+        r_r4 = r_q - r4[:, None]
+        denom = np.sqrt(np.maximum(-c4[:, None] * r_r3 * r_r4, 0.0)) + 1e-300
 
-        Ei  = E[inc];  Lzi = Lz[inc];  Qi = Q[inc]
-        A_c = a**2 * (1.0 - Ei**2)
-        B_c = Qi + A_c + Lzi**2
-        disc = B_c**2 - 4.0 * A_c * Qi
-        pv  = np.isfinite(disc) & (disc >= 0.0) & (A_c > 1e-20)
+        integrand = T_r_val / denom                           # (N, N_QUAD)
 
-        z_m = np.where(pv,
-            (B_c - np.sqrt(np.maximum(disc, 0.0))) / (2.0 * np.maximum(A_c, 1e-30)), 0.0)
-        z_m = np.maximum(z_m, 0.0)
-        z_p = np.where(pv,
-            (B_c + np.sqrt(np.maximum(disc, 0.0))) / (2.0 * np.maximum(A_c, 1e-30)), 1.0)
-
-        with np.errstate(divide='ignore', invalid='ignore'):
-            k_sq = np.where(pv & (z_p > 1e-20), z_m / z_p, 0.0)
-        k_sq   = np.clip(k_sq, 0.0, 1.0 - 1e-12)
-        K_th   = ellipk(k_sq)
-        eps0   = A_c / np.maximum(Lzi**2, 1e-30)
-        Ups_th = np.pi * np.abs(Lzi) * np.sqrt(eps0 * z_p) / (2.0 * K_th)
-        Lam_th = 2.0 * np.pi / np.maximum(Ups_th, 1e-30)
-
-        sz  = np.sqrt(z_m)[:, None]
-        u_q = 0.5 * sz * (1.0 + np.cos(chi)[None, :])
-
-        T_th = -a**2 * Ei[:, None] * (1.0 - u_q**2)
-        Th_q = Qi[:, None] - B_c[:, None] * u_q**2 + A_c[:, None] * u_q**4
-        Th_q = np.maximum(Th_q, 0.0)
-
-        integ  = 0.5 * sz * np.sin(chi)[None, :] * T_th / np.sqrt(Th_q + 1e-300)
-        I_th   = np.einsum('iq,q->i', integ, w)
-        result[inc] = np.where(pv, 4.0 * I_th / Lam_th, -a**2 * Ei)
-
-        bad = ~np.isfinite(result)
-        result[bad] = -a**2 * E[bad]
-        return result
-
-    # ------------------------------------------------------------------
-    # Master computation
-    # ------------------------------------------------------------------
+        # Factor of 2: cosine sub covers rp->ra (half period); full period = 2x
+        integral = 2.0 * np.einsum('iq,q->i', integrand, w)  # (N,)
+        return integral / Lambda_r
 
     def _compute_dT(self):
         orig_shape = self.dE.shape
@@ -273,19 +201,18 @@ class FallbackGen:
         print(f"  Q  range: [{Q_flat.min():.3e}, {Q_flat.max():.3e}]")
         print(f"  chunk_size = {self.chunk_size:,}")
 
-        # ---- 1: roots via batched companion matrix eigensolver ----
-        print("  Finding roots (batched eigensolver) ...")
+        # ---- 1: roots via chunked companion matrix eigensolver ----
+        print("  Finding roots (chunked eigensolver) ...")
         roots = self._four_roots_batched(E_flat, Lz_flat, Q_flat)
         r1, r2, r3, r4 = roots[:, 0], roots[:, 1], roots[:, 2], roots[:, 3]
         valid = np.isfinite(r1) & np.isfinite(r2) & (r2 > 0.0)
         print(f"  Bound: {(E_flat < 1.0).sum():,} / {N_total:,}")
         print(f"  Valid roots: {valid.sum():,}")
 
-        # In _compute_dT, after root finding:
         separatrix = valid & ((r2 - r3) < 1e-6 * r2)
         if separatrix.sum() > 0:
-            print(f"  Warning: {separatrix.sum()} particles near separatrix (r2≈r3)")
-            valid &= ~separatrix  # exclude — T_r is genuinely infinite here
+            print(f"  Warning: {separatrix.sum()} particles near separatrix (r2≈r3), excluding")
+            valid &= ~separatrix
 
         # ---- 2: Lambda_r ----
         Lambda_r = np.full(N_total, np.nan)
@@ -301,34 +228,29 @@ class FallbackGen:
         avg_Tr     = np.full(N_total, np.nan)
         avg_Ttheta = np.full(N_total, np.nan)
 
-        n_chunks = (n_val + self.chunk_size - 1) // self.chunk_size
+        n_chunks = max(1, (n_val + self.chunk_size - 1) // self.chunk_size)
         print(f"  Quadrature: {n_chunks} chunks ...")
 
         for k, start in enumerate(range(0, n_val, self.chunk_size)):
             sl  = idx[start : start + self.chunk_size]
             Ec  = E_flat[sl];  Lzc = Lz_flat[sl]
             Qc  = Q_flat[sl];  Lrc = Lambda_r[sl]
-            r1c = r1[sl];      r2c = r2[sl]
+            r1c = r1[sl];  r2c = r2[sl]
+            r3c = r3[sl];  r4c = r4[sl]
 
-            avg_Tr[sl]     = self._avg_Tr(Ec, Lzc, Qc, r1c, r2c, Lrc)
-            avg_Ttheta[sl] = self._avg_Ttheta(Ec, Lzc, Qc)
+            avg_Tr[sl]     = self._avg_Tr(Ec, Lzc, Qc, r1c, r2c, r3c, r4c, Lrc)
 
             pct = min(100, int((k + 1) / n_chunks * 100))
             print(f"    chunk {k+1}/{n_chunks}  ({pct}%)", end='\r')
 
-        print()   # newline after \r progress
+        print()
 
-        # ---- 5 & 6: T_r = Gamma * Lambda_r ----
-        Gamma = avg_Tr + avg_Ttheta + self.a * Lz_flat
+        # ---- 5 & 6: T_r = Gamma * Lambda_r  (Eq. 2.31) ----
+        Gamma = avg_Tr + self.a * Lz_flat
         T_r   = Gamma * Lambda_r
         T_r   = np.where((T_r > 0) & np.isfinite(T_r), T_r, np.nan)
         print(f"  Successful T_r: {np.isfinite(T_r).sum():,} / {N_total:,}")
 
-        dTs = T_r.reshape(orig_shape)
-
-        self.dTs = dTs
-
-        # store intermediates
+        self.dTs         = T_r.reshape(orig_shape)
         self.Lambda_r    = Lambda_r.reshape(orig_shape)
         self.avg_Tr_arr  = avg_Tr.reshape(orig_shape)
-        self.avg_Tth_arr = avg_Ttheta.reshape(orig_shape)
