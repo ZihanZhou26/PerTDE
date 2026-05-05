@@ -167,59 +167,6 @@ class TDECalculator:
             r2 *= 1.3
 
         return cp.optimize.brentq(self.R_of_r, r1, r2)
-
-    def _compute_rel_dT(self, dq, dE, dLz):
-        """
-        For stage two, compute dT.
-        """
-        rp = self.Rp
-        a = self.a
-        Lz = self.mom_kerr_analytic(rp, a)
-        E = self.OrbitEnergy
-        Q = self.Carter
-        ε = 1e-6
-
-        # only bound orbits?
-        total_Energy = E * np.ones(dE.shape) + dE
-        total_Energy = np.where(total_Energy >= 1, np.nan, total_Energy)
-        bound_Energy = total_Energy[~np.isnan(total_Energy)]
-        
-        total_Q = Q * np.ones(dq.shape) + dq
-        total_Lz = Lz * np.ones(dLz.shape) + dLz
-
-        bound_Q = total_Q[~np.isnan(total_Energy)]
-        bound_Lz = total_Lz[~np.isnan(total_Energy)]
-
-        # integration
-        ra = self.find_ra()
-        r = self.R_TDE
-        ε = 1e-6
-        tau_max = np.max(self.t)
-
-        y0_out = [0.0, r + ε, 0.0, 0.0]
-        sol_out = cp.integrate.solve_ivp(
-            self.geodesic_kerr_s2,
-            (0, tau_max),
-            y0_out,
-            args=(bound_Q, bound_Energy, bound_Lz),
-            t_eval=self.t[self.t >= 0]
-        )   
-
-        tau = sol_out.t
-        time = sol_out.y[0]
-        radius = sol_out.y[1]
-
-        # find tf when R reaches apocenter of orbit
-        self.bound_R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
-        self.bound_obs_t = cp.interpolate.interp1d(tau, time, kind='cubic', fill_value='extrapolate')
-
-        f = lambda τ: self.bound_R(τ) - ra
-        τ_ra = cp.optimize.brentq(f, tau[0], tau[-1])
-
-        tf = self.bound_obs_t(τ_ra)
-        dT = 2 * tf
-
-        return dT
     
     def _compute_rel_orbit(self):
         """
@@ -769,7 +716,7 @@ class TDECalculator:
 
         self.partials_table = table
 
-    def whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
+    def whole_star_sample(self, N_Omega=300**2):
         """
         At the TDE moment, sample N_Omega random directions on the sphere,
         compute perturbed and unperturbed energies & orbital periods,
@@ -783,7 +730,7 @@ class TDECalculator:
         # 1. Interpolate t_TDE quantities
         R_TDE   = self.R_TDE
         Phi_TDE = self.Phi_TDE
-        i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
+        i0, i1  = self.i_TDE - 1, self.i_TDE
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
 
         xi_r_TDE = (self.xi_r[:, :, i0]
@@ -885,13 +832,11 @@ class TDECalculator:
             'dT_random':            dT_random,
             'dEnergy_unperturbed':  dEnergy_unperturbed,
             'dT_unperturbed':       dT_unperturbed,
-            'dMass':                dMass_random,
-            'x_pos':    x_pos,
-            'y_pos':    y_pos,
-            'z_pos':    z_pos
+            'dMass':                dMass_random
         }
     
-    def rel_whole_star_sample(self, idx_from_tde=0, N_Omega=300**2):
+    
+    def rel_whole_star_sample(self, N_Omega=300**2):
         """
         At the TDE moment, sample N_Omega random directions on the sphere,
         compute perturbed and unperturbed energies & orbital periods,
@@ -912,7 +857,7 @@ class TDECalculator:
         a = self.a
         E = self.OrbitEnergy
         Lz = self.mom_kerr_analytic(rp, a)
-        i0, i1  = self.i_TDE - 1 + idx_from_tde, self.i_TDE + idx_from_tde
+        i0, i1  = self.i_TDE - 1, self.i_TDE
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
 
         xi_r_TDE = (self.xi_r[:, :, i0]
@@ -1032,8 +977,8 @@ class TDECalculator:
         rterm = R_TDE * lambda_r_i
         term_braket = bracket1 - rterm
 
-        self.dK_random = dK_random = 2 * np.einsum('i,ikn->kn', term_braket, X)
-        self.dQ_random = dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
+        self.dK_random = 2 * np.einsum('i,ikn->kn', term_braket, X)
+        self.dQ_random = self.dK_random - 2 * (Lz - a * E) * (dLz_random - a * dEnergy_random)
 
         # dT_random = self._compute_rel_dT(dQ_random, dEnergy_random, dLz_random)
         dT_random = np.where(
