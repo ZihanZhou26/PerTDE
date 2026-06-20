@@ -61,8 +61,23 @@ class TDECalculator:
         ) * self.summary['R_star'][0]**2 / (self.summary['M_star'][0]**2 / self.summary['R_star'][0])
 
         # ——— Time grid & orbit ———
-        Omegap = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
-        t_ini  = self.N * (0.012 / Omegap)
+        # Omegap = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
+        # t_ini  = self.N * (0.012 / Omegap) 
+        # self.t = np.linspace(-t_ini, t_ini, self.N)
+        # self.obs_t = np.zeros(len(self.t))
+
+        target_ratio = 2.0          # how similar you want dt(1.3) and dt(10) to be
+        Rp_lo, Rp_hi = 1.3, 10.0
+
+        alpha = np.log(target_ratio) / (1.5 * np.log(Rp_hi / Rp_lo))
+
+        Rp_ref = 10.0
+        Omegap     = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
+        Omegap_ref = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * Rp_ref**3))
+
+        Omegap_eff = Omegap**alpha * Omegap_ref**(1 - alpha)
+        t_ini = self.N * (0.012 / Omegap_eff)
+
         self.t = np.linspace(-t_ini, t_ini, self.N)
         self.obs_t = np.zeros(len(self.t))
 
