@@ -246,7 +246,7 @@ class FallbackGen:
         print()
 
         # ---- 5 & 6: T_r = Gamma * Lambda_r  (Eq. 2.31) ----
-        Gamma = avg_Tr + self.a * Lz_flat
+        Gamma = avg_Tr + self.a * Lz_flat - self.a**2 * E_flat
         T_r   = Gamma * Lambda_r
         T_r   = np.where((T_r > 0) & np.isfinite(T_r), T_r, np.nan)
         print(f"  Successful T_r: {np.isfinite(T_r).sum():,} / {N_total:,}")
