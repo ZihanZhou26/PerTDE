@@ -138,30 +138,6 @@ class TDECalculator:
 
         return [dt_dτ, dr_dτ, dφ_dτ, dpsi_dτ]
     
-    def geodesic_kerr_s2(self, τ, dq, dE, dLz, y):
-        """
-        Testing new geodesic function based off of Kesden 2012.
-        """
-        t, r, phi, psi = y
-
-        q = dq
-        E = dE
-        a = self.a
-        Lz = dLz
-        theta = np.pi / 2
-
-        sigma = r**2 + a**2 * np.cos(theta)**2
-        delta = r**2 + a**2 - 2 * r
-        alpha = (r**2 + a**2)**2 - delta * a**2 * np.sin(theta)**2
-
-        dt_dτ = ((alpha * E - 2 * a * r * Lz) / delta) / sigma
-        dr_dτ = np.sqrt((E * (r**2 + a**2) - a * Lz)**2 - delta * (r**2 + (Lz - a * E)**2 + q)) / sigma
-        # dφ_dτ = (Lz * np.csc(theta)**2 + (2 * a * r * E - a**2 * Lz) / delta) / sigma
-        # dθ_dτ = np.sqrt(q - Lz**2 * np.cot(theta)**2 - a**2 * (1 - E**2) * np.cos(theta)**2) / sigma
-        # dpsi_dτ = np.abs(a - Lz) * (((r**2 + a**2) - a * Lz) / ((a - Lz)**2 + r**2) + a * (Lz - a) / (a - Lz)**2) / r**2
-
-        return [dt_dτ, dr_dτ]
-    
     def R_of_r(self, r):
         a = self.a
         rp = self.Rp
@@ -559,6 +535,7 @@ class TDECalculator:
             R = self.R(self.t)
             Rdot = self.Rdot(self.t)
             Phi = self.Phi(self.t)
+            Psi = self.Psi(self.t)
             phidot = self.phidot(self.t)
             tdot = self.tdot(self.t)
         else:
@@ -583,11 +560,12 @@ class TDECalculator:
         # Record corresponding orbital radius & phase
         self.i_TDE = idx
         self.R_TDE = np.interp(self.t_TDE, self.t, R)
+        self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
         if self.orbit != "nwtn": 
             self.Rdot_TDE = np.interp(self.t_TDE, self.t, Rdot)
             self.phidot_TDE = np.interp(self.t_TDE, self.t, phidot)
             self.tdot_TDE = np.interp(self.t_TDE, self.t, tdot)
-        self.Phi_TDE = np.interp(self.t_TDE, self.t, Phi)
+            self.Psi_TDE = np.interp(self.t_TDE, self.t, Psi)
 
     def kerr_metric(self, r, theta):
         # Initialize arrays: G[a,b,i]
@@ -596,7 +574,7 @@ class TDECalculator:
         s, c = np.sin(theta), np.cos(theta)
         delta = r**2 + a**2 - 2 * r
         sigma = r**2 + a**2 * c**2
-        A = (r**2 + a**2)**2 - sigma * a**2 * s**2
+        A = (r**2 + a**2)**2 - delta * a**2 * s**2
 
         G[0,0] = -(1 - ((2*r)/sigma))
         G[1,1] = sigma / delta
@@ -615,7 +593,7 @@ class TDECalculator:
 
         delta = r**2 + a**2 - 2 * r
         sigma = r**2 + a**2 * c**2
-        A = (r**2 + a**2)**2 - sigma * a**2 * s**2
+        A = (r**2 + a**2)**2 - delta * a**2 * s**2
 
         C[1,0,0] = (delta / sigma**3) * (2 * r**2 - sigma)
         C[2,0,0] = -(2 * a**2 * r * s * c) / sigma**3
@@ -867,11 +845,14 @@ class TDECalculator:
         Rdot_TDE = self.Rdot_TDE
         tdot_TDE = self.tdot_TDE
         Phi_TDE = self.Phi_TDE
+        Psi_TDE = self.Psi_TDE
         phidot_TDE = self.phidot_TDE
         rp = self.Rp
         a = self.a
         E = self.OrbitEnergy
         Lz = self.mom_kerr_analytic(rp, a)
+        cPsi = np.cos(Psi_TDE)
+        sPsi = np.sin(Psi_TDE)
         i0, i1  = self.i_TDE - 1, self.i_TDE
         frac    = (self.t_TDE - self.t[i0]) / (self.t[i1] - self.t[i0])
 
@@ -939,7 +920,9 @@ class TDECalculator:
         y_pos = rr[:, None] * n[1] + xi[1]
         z_pos = rr[:, None] * n[2] + xi[2]
 
-        X = np.array([x_pos * self.Rstar, y_pos * self.Rstar, z_pos * self.Rstar])
+        X = np.array([x_pos * self.Rstar * cPsi + y_pos * self.Rstar * sPsi, 
+                      z_pos * self.Rstar, 
+                      -x_pos * self.Rstar * sPsi + y_pos * self.Rstar * cPsi])
 
         g_i = self.G[:, :]         # g_{βγ}
         lam_i = self.LAMBDA[:, :]  # λ^μ_a
