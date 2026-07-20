@@ -212,7 +212,7 @@ class TDECalculator:
         p_in = (radius_in**2 + a**2) - a * Lz
         rho_in = radius_in**2 + a**2 * np.cos(theta)**2
         delta_in = radius_in**2 - 2 * radius_in + a**2
-        Rdot_in = (np.sqrt(p_in**2 - delta_in * (radius_in**2 + (Lz - a * E)**2 + q))) / rho_in
+        Rdot_in = -(np.sqrt(p_in**2 - delta_in * (radius_in**2 + (Lz - a * E)**2 + q))) / rho_in
 
         p_out = (radius_out**2 + a**2) - a * Lz
         rho_out = radius_out**2 + a**2 * np.cos(theta)**2
