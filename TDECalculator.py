@@ -185,7 +185,7 @@ class TDECalculator:
         psi += phi[0] - psi[0]
 
         radius_in = sol_in.y[1][::-1]
-        radius_out = sol_in.y[1][::-1]
+        radius_out = sol_out.y[1][1:]
 
         # R, phi, t, and psi
         self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
