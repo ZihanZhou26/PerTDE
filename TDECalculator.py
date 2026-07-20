@@ -184,6 +184,9 @@ class TDECalculator:
         psi = np.hstack([-sol_in.y[3][::-1], sol_out.y[3][1:]])
         psi += phi[0] - psi[0]
 
+        radius_in = sol_in.y[1][::-1]
+        radius_out = sol_in.y[1][::-1]
+
         # R, phi, t, and psi
         self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')
         self.Phi = cp.interpolate.interp1d(tau, phi, kind='cubic', fill_value='extrapolate')
@@ -202,9 +205,21 @@ class TDECalculator:
         delta = radius**2 - 2 * radius + a**2
 
         tdot = (-a * (a * E * np.sin(theta)**2 - Lz) + ((radius**2 + a**2) / delta) * p) / rho
-        Rdot = (np.sqrt(p**2 - delta * (radius**2 + (Lz - a * E)**2 + q))) / rho
         phidot = (-(a * E  - (Lz/np.sin(theta)**2)) + (a/delta) * p) / rho  
         psidot = np.abs(a - Lz) * (((radius**2 + a**2) - a * Lz) / ((a - Lz)**2 + radius**2) + a * (Lz - a) / (a - Lz)**2) / radius**2
+
+        # Rdot
+        p_in = (radius_in**2 + a**2) - a * Lz
+        rho_in = radius_in**2 + a**2 * np.cos(theta)**2
+        delta_in = radius_in**2 - 2 * radius_in + a**2
+        Rdot_in = (np.sqrt(p_in**2 - delta_in * (radius_in**2 + (Lz - a * E)**2 + q))) / rho_in
+
+        p_out = (radius_out**2 + a**2) - a * Lz
+        rho_out = radius_out**2 + a**2 * np.cos(theta)**2
+        delta_out = radius_out**2 - 2 * radius_out + a**2
+        Rdot_out = (np.sqrt(p_out**2 - delta_out * (radius_out**2 + (Lz - a * E)**2 + q))) / rho_out
+
+        Rdot = np.hstack([Rdot_in, Rdot_out])
 
         self.tdot = cp.interpolate.interp1d(tau, tdot, kind='cubic', fill_value='extrapolate')
         self.Rdot = cp.interpolate.interp1d(tau, Rdot, kind='cubic', fill_value='extrapolate')
