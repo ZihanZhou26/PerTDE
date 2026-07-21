@@ -653,15 +653,15 @@ class TDECalculator:
         LAMBDA[2,1] = ((beta * a * c) / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
         LAMBDA[3,1] = (a / np.sqrt(K)) * ((alpha * r * rdot) / delta + ((beta * c * thetadot) / s))
 
-        LAMBDA[0,2] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
-        LAMBDA[1,2] = ((a * c) / (sigma * np.sqrt(K))) * ((r**2 + a**2) - a*Lz)
-        LAMBDA[2,2] = -(r / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
-        LAMBDA[3,2] = (1 / np.sqrt(K)) * ((a**2 * c * rdot) / delta - ((r * thetadot) / s))
+        LAMBDA[0,3] = (a / np.sqrt(K)) * (((r**2 + a**2) * c * rdot) / delta - r * s * thetadot)
+        LAMBDA[1,3] = ((a * c) / (sigma * np.sqrt(K))) * ((r**2 + a**2) - a*Lz)
+        LAMBDA[2,3] = -(r / (sigma * np.sqrt(K))) * (a * s - (Lz / s))
+        LAMBDA[3,3] = (1 / np.sqrt(K)) * ((a**2 * c * rdot) / delta - ((r * thetadot) / s))
 
-        LAMBDA[0,3] = alpha * ((r**2 + a**2) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
-        LAMBDA[1,3] = alpha * rdot
-        LAMBDA[2,3] = beta * thetadot
-        LAMBDA[3,3] = ((alpha * a) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
+        LAMBDA[0,2] = alpha * ((r**2 + a**2) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - beta * (a / sigma) * (a * s**2 - Lz)
+        LAMBDA[1,2] = alpha * rdot
+        LAMBDA[2,2] = beta * thetadot
+        LAMBDA[3,2] = ((alpha * a) / (sigma * delta)) * ((r**2 + a**2) - a * Lz) - (beta / sigma) * (a - (Lz / s**2))
 
         self.LAMBDA = LAMBDA
 
@@ -921,8 +921,8 @@ class TDECalculator:
         z_pos = rr[:, None] * n[2] + xi[2]
 
         X = np.array([x_pos * self.Rstar * cPsi + y_pos * self.Rstar * sPsi, 
-                      z_pos * self.Rstar, 
-                      -x_pos * self.Rstar * sPsi + y_pos * self.Rstar * cPsi])
+                      -x_pos * self.Rstar * sPsi + y_pos * self.Rstar * cPsi,
+                      z_pos * self.Rstar])
 
         g_i = self.G[:, :]         # g_{βγ}
         lam_i = self.LAMBDA[:, :]  # λ^μ_a
