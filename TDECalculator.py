@@ -2,7 +2,6 @@ import pygyre as pg
 import numpy as np
 import scipy as cp
 from scipy import integrate
-import matplotlib.pyplot as plt
 
 class TDECalculator:
     """
@@ -66,6 +65,7 @@ class TDECalculator:
         self.t = np.linspace(-t_ini, t_ini, self.N)
         self.obs_t = np.zeros(len(self.t))
 
+        # Uncomment if want larger N to correspond to longer t_ini for close Rp encounters
         # target_ratio = 2.0          # how similar you want dt(1.3) and dt(10) to be
         # Rp_lo, Rp_hi = 1.3, 10.0
 

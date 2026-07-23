@@ -1,9 +1,5 @@
-import pygyre as pg
 import numpy as np
-import scipy as cp
-import matplotlib.pyplot as plt
 from scipy.special import ellipk
-from scipy.integrate import fixed_quad
 
 class FallbackGen:
     "Does dT calculation offline"
