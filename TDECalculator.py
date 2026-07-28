@@ -1020,7 +1020,7 @@ class TDECalculator:
             'z_pos':    z_pos
         }
     
-    def equator_sample(self, idx_from_tde=0, n_phi=3000):
+    def equator_sample(self, idx_from_tde=0, n_phi=400, n_theta=200):
         """
         Build a full 3D grid of debris positions at t_TDE, both
         unperturbed and mode‐perturbed, on a (r, θ, φ) mesh.
@@ -1031,7 +1031,6 @@ class TDECalculator:
         """
         rho = self.rho
         # --- Angular grid (cell boundaries) ---
-        n_theta = 2 # makes it such that only the equator is sampled
         theta = np.linspace(0, np.pi, n_theta)
         phi   = np.linspace(0, 2*np.pi, n_phi)
 
