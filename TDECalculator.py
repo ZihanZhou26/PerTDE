@@ -202,7 +202,7 @@ class TDECalculator:
         E = self.OrbitEnergy
         q = self.Carter
 
-        p = (radius**2 + a**2) - a * Lz
+        p = E * (radius**2 + a**2) - a * Lz
         rho = radius**2 + a**2 * np.cos(theta)**2
         delta = radius**2 - 2 * radius + a**2
 
