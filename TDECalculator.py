@@ -169,20 +169,25 @@ class TDECalculator:
         tau_max = np.max(self.t)
 
         y0_out = [0.0, rp + ε, 0.0, 0.0]
-        sol_in = sol_out = cp.integrate.solve_ivp(
-            self.geodesic_kerr,
-            (0, tau_max),
-            y0_out,
-            t_eval=self.t[self.t >= 0]
-        )   
+        tau_out = np.concatenate(([0.0], self.t[self.t > 0]))
 
-        # connect inbound and outbound leg
-        tau = np.hstack([-sol_in.t[::-1], sol_out.t[1:]])
-        time = np.hstack([-sol_in.y[0][::-1], sol_out.y[0][1:]])
-        radius = np.hstack([sol_in.y[1][::-1], sol_out.y[1][1:]])
-        phi = np.hstack([-sol_in.y[2][::-1], sol_out.y[2][1:]])
-        psi = np.hstack([-sol_in.y[3][::-1], sol_out.y[3][1:]])
-        psi += phi[0] - psi[0]
+        sol_out = cp.integrate.solve_ivp(
+            self.geodesic_kerr,
+            (0.0, tau_max),
+            y0_out,
+            t_eval=tau_out,
+            rtol=1e-10,
+            atol=1e-12)
+
+        if not sol_out.success:
+            raise RuntimeError(sol_out.message)
+
+        # Reflect about pericenter; index 0 is excluded from the inbound leg.
+        tau = np.concatenate((-sol_out.t[:0:-1], sol_out.t))
+        time = np.concatenate((-sol_out.y[0, :0:-1], sol_out.y[0]))
+        radius = np.concatenate((sol_out.y[1, :0:-1], sol_out.y[1]))
+        phi = np.concatenate((-sol_out.y[2, :0:-1], sol_out.y[2]))
+        psi = np.concatenate((-sol_out.y[3, :0:-1], sol_out.y[3]))
 
         # R, phi, t, and psi
         self.R = cp.interpolate.interp1d(tau, radius, kind='cubic', fill_value='extrapolate')

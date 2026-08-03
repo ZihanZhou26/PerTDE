@@ -4,21 +4,19 @@ from scipy.special import ellipk
 class FallbackGen:
     "Does dT calculation offline"
 
-    def __init__(self, mass_ratio, a, rtde, rp, E, Lz, Q, dE, dLz, dQ, N):
+    def __init__(self, mass_ratio, a, rtde, rp, E, Lz, dE, dLz, N):
         self.dE = dE
         self.dLz = dLz
-        self.dQ = dQ
         self.a = a
         self.R_TDE = rtde
         self.Rp = rp
         self.OrbitEnergy = E
         self.mom = Lz
-        self.Carter = Q
         self.mass_ratio = mass_ratio
         self.N = N
 
         self.total_E = self.dE + np.ones(self.dE.shape) * self.OrbitEnergy
-        self.total_Q = self.dQ + np.ones(self.dLz.shape) * self.Carter
+        self.total_Q = np.zeros(self.dLz.shape)
         self.total_Lz = self.dLz + np.ones(self.dLz.shape) * self.mom
 
         Omegap = 1.5 * np.sqrt((1 + self.mass_ratio) / (2 * self.Rp**3))
