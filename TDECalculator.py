@@ -681,7 +681,7 @@ class TDECalculator:
 
         lalpha = np.array([dt, dr, dtheta, dphi]) #l
 
-        self.l_null = lalpha
+        return lalpha
 
     def n_null(self, r, theta):
         a = self.a 
@@ -695,7 +695,7 @@ class TDECalculator:
 
         n = np.array([dt, dr, dtheta, dphi]) #n
 
-        self.n_null = n
+        return n
 
     def partials_table(self, r):
         a = self.a
