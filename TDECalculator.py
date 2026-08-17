@@ -712,7 +712,7 @@ class TDECalculator:
 
         table[1,3,3] = -((a**2 * (2 * r - 2))/ (2 * delta**2))
 
-        self.partials_table = table
+        return table
 
     def whole_star_sample(self, N_Omega=300**2):
         """
@@ -869,9 +869,9 @@ class TDECalculator:
         self.kerr_metric(R_TDE, np.pi/2)
         self.christoffel_symb(R_TDE, np.pi/2)
         self.rel_lambda(tdot_TDE, R_TDE, Rdot_TDE, np.pi/2, 0.0, phidot_TDE)
-        self.l_null(R_TDE, np.pi/2)
-        self.n_null(R_TDE, np.pi/2)
-        self.partials_table(R_TDE)
+        l_alpha = self.l_null(R_TDE, np.pi/2)      # l^α
+        n_alpha = self.n_null(R_TDE, np.pi/2)      # n^α
+        table = self.partials_table(R_TDE)
 
         # 2. Sample random directions
         x, y, z = np.random.normal(size=(3, N_Omega))
@@ -932,9 +932,6 @@ class TDECalculator:
         g_i = self.G[:, :]         # g_{βγ}
         lam_i = self.LAMBDA[:, :]  # λ^μ_a
         C_i = self.C[:, :, :]      # Γ^γ_{αt}
-        l_alpha = self.l_null      # l^α
-        n_alpha = self.n_null      # n^α
-        table = self.partials_table
 
         Gamma_alpha_t = C_i[:, :, 0]                             # Shape (4, 4) = Γ^γ_{α t}
         Gamma_alpha_phi = C_i[:, :, 3]  
